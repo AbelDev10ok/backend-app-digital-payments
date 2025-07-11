@@ -26,7 +26,6 @@ public class Sale {
     @jakarta.persistence.GeneratedValue(strategy = jakarta.persistence.GenerationType.IDENTITY)
     private Long id;
 
-        
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", nullable = false)
     private Client client;
@@ -45,26 +44,56 @@ public class Sale {
     private Payments typePayments;
     
     @Column(nullable = false)
-    private Integer quiantityFees;
+    private Integer quiantityFees; // Cantidad de cuotas originales
     
     @Column(nullable = false)
-    private Double amountFe;
+    private Integer additionalFees = 0; // Cuotas extras agregadas
     
-    @OneToMany(mappedBy = "sales", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Column(nullable = false)
+    private Double remainingAmount= priceTotal;
+
+    @Column(nullable = false)
+    private Double amountFee;
+    
+    @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Fee> fees = new ArrayList<>();
+
+    private LocalDate finalPaymentDate; 
+    
+    private LocalDate realFinalDate; 
+    
+    private Integer daysLate = 0; 
+
+    private boolean completed; // Si está completamente pagada
 
 
     public Sale() {
     }
+
     public Sale(Client client, String descriptiononProduct, Double priceTotal, LocalDate dateSale,
-            Payments typePayments, Integer quiantityFees, Double amountFe) {
+                Payments typePayments, Integer quiantityFees, Double amountFee) {
         this.client = client;
         this.descriptiononProduct = descriptiononProduct;
         this.priceTotal = priceTotal;
         this.dateSale = dateSale;
         this.typePayments = typePayments;
         this.quiantityFees = quiantityFees;
-        this.amountFe = amountFe;
+        this.amountFee = amountFee;
+        this.remainingAmount = priceTotal; // Inicialmente el monto restante es el total
+    }
+
+
+    // Método helper para actualizar el saldo
+    public void deductFromRemainingAmount(Double amount) {
+        this.remainingAmount = Math.max(0, this.remainingAmount - amount);
+        if(this.remainingAmount <= 0) {
+            this.completed = true;
+        }
+    }
+
+    // Mantenemos quantityFees como campo calculado
+    public Integer getTotalFees() {
+        return quiantityFees + additionalFees;
     }
 
     public Long getId() {
@@ -124,11 +153,11 @@ public class Sale {
     }
 
     public Double getAmountFe() {
-        return amountFe;
+        return amountFee;
     }
 
-    public void setAmountFe(Double amountFe) {
-        this.amountFe = amountFe;
+    public void setAmountFe(Double amountFee) {
+        this.amountFee = amountFee;
     }
 
     public List<Fee> getFees() {
@@ -139,19 +168,82 @@ public class Sale {
         this.fees = fees;
     }
 
+    public Double getAmountFee() {
+        return amountFee;
+    }
+
+    public void setAmountFee(Double amountFee) {
+        this.amountFee = amountFee;
+    }
+
+    public LocalDate getFinalPaymentDate() {
+        return finalPaymentDate;
+    }
+
+    public void setFinalPaymentDate(LocalDate finalPaymentDate) {
+        this.finalPaymentDate = finalPaymentDate;
+    }
+
+    public LocalDate getRealFinalDate() {
+        return realFinalDate;
+    }
+
+    public void setRealFinalDate(LocalDate realFinalDate) {
+        this.realFinalDate = realFinalDate;
+    }
+
+    public Integer getDaysLate() {
+        return daysLate;
+    }
+
+
+    public void setDaysLate(Integer daysLate) {
+        this.daysLate = daysLate;
+    }
+
+    public boolean isCompleted() {
+        return completed;
+    }
+
+    public void setCompleted(boolean completed) {
+        this.completed = completed;
+    }
+
+    public Integer getAdditionalFees() {
+        return additionalFees;
+    }
+
+    public void setAdditionalFees(Integer additionalFees) {
+        this.additionalFees = additionalFees;
+    }
+
+    public Double getRemainingAmount() {
+        return remainingAmount;
+    }
+
+    public void setRemainingAmount(Double remainingAmount) {
+        this.remainingAmount = remainingAmount;
+    }
+ 
+
     @Override
     public int hashCode() {
         final int prime = 31;
         int result = 1;
-        result = prime * result + ((id == null) ? 0 : id.hashCode());
         result = prime * result + ((client == null) ? 0 : client.hashCode());
         result = prime * result + ((descriptiononProduct == null) ? 0 : descriptiononProduct.hashCode());
         result = prime * result + ((priceTotal == null) ? 0 : priceTotal.hashCode());
         result = prime * result + ((dateSale == null) ? 0 : dateSale.hashCode());
         result = prime * result + ((typePayments == null) ? 0 : typePayments.hashCode());
         result = prime * result + ((quiantityFees == null) ? 0 : quiantityFees.hashCode());
-        result = prime * result + ((amountFe == null) ? 0 : amountFe.hashCode());
+        result = prime * result + ((additionalFees == null) ? 0 : additionalFees.hashCode());
+        result = prime * result + ((remainingAmount == null) ? 0 : remainingAmount.hashCode());
+        result = prime * result + ((amountFee == null) ? 0 : amountFee.hashCode());
         result = prime * result + ((fees == null) ? 0 : fees.hashCode());
+        result = prime * result + ((finalPaymentDate == null) ? 0 : finalPaymentDate.hashCode());
+        result = prime * result + ((realFinalDate == null) ? 0 : realFinalDate.hashCode());
+        result = prime * result + ((daysLate == null) ? 0 : daysLate.hashCode());
+        result = prime * result + (completed ? 1231 : 1237);
         return result;
     }
 
@@ -164,11 +256,6 @@ public class Sale {
         if (getClass() != obj.getClass())
             return false;
         Sale other = (Sale) obj;
-        if (id == null) {
-            if (other.id != null)
-                return false;
-        } else if (!id.equals(other.id))
-            return false;
         if (client == null) {
             if (other.client != null)
                 return false;
@@ -196,17 +283,46 @@ public class Sale {
                 return false;
         } else if (!quiantityFees.equals(other.quiantityFees))
             return false;
-        if (amountFe == null) {
-            if (other.amountFe != null)
+        if (additionalFees == null) {
+            if (other.additionalFees != null)
                 return false;
-        } else if (!amountFe.equals(other.amountFe))
+        } else if (!additionalFees.equals(other.additionalFees))
+            return false;
+        if (remainingAmount == null) {
+            if (other.remainingAmount != null)
+                return false;
+        } else if (!remainingAmount.equals(other.remainingAmount))
+            return false;
+        if (amountFee == null) {
+            if (other.amountFee != null)
+                return false;
+        } else if (!amountFee.equals(other.amountFee))
             return false;
         if (fees == null) {
             if (other.fees != null)
                 return false;
         } else if (!fees.equals(other.fees))
             return false;
+        if (finalPaymentDate == null) {
+            if (other.finalPaymentDate != null)
+                return false;
+        } else if (!finalPaymentDate.equals(other.finalPaymentDate))
+            return false;
+        if (realFinalDate == null) {
+            if (other.realFinalDate != null)
+                return false;
+        } else if (!realFinalDate.equals(other.realFinalDate))
+            return false;
+        if (daysLate == null) {
+            if (other.daysLate != null)
+                return false;
+        } else if (!daysLate.equals(other.daysLate))
+            return false;
+        if (completed != other.completed)
+            return false;
         return true;
     }
+    
+    
     
 }

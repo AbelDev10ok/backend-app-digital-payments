@@ -21,32 +21,36 @@ public class Fee {
     
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sale_id", nullable = false)
-    private Sale venta;
+    private Sale sale;
     
     @Column(nullable = false)
     private Integer numberFee;
     
-    @Column(nullable = false)
     private Double amount;
     
     @Column(nullable = false)
-    private LocalDate fechaVencimiento;
-    
+    private LocalDate expirationDate;
+
     @Column(nullable = false)
     private Boolean paid = false;
+
+    @Column(nullable = false)
+    private boolean additional = false; 
     
     private LocalDate datePayment;
+    
 
     public Fee() {
     }
 
-    public Fee(Sale venta, Integer numberFee, Double amount, LocalDate fechaVencimiento) {
-        this.venta = venta;
+    public Fee(Sale venta, Integer numberFee, Double amount, LocalDate expirationDate) {
+        this.sale = venta;
         this.numberFee = numberFee;
         this.amount = amount;
-        this.fechaVencimiento = fechaVencimiento;
+        this.expirationDate = expirationDate;
     }
 
+    
     public Long getId() {
         return id;
     }
@@ -55,12 +59,12 @@ public class Fee {
         this.id = id;
     }
 
-    public Sale getVenta() {
-        return venta;
+    public Sale getSale() {
+        return sale;
     }
 
-    public void setVenta(Sale venta) {
-        this.venta = venta;
+    public void setSale(Sale sale) {
+        this.sale = sale;
     }
 
     public Integer getNumberFee() {
@@ -79,12 +83,12 @@ public class Fee {
         this.amount = amount;
     }
 
-    public LocalDate getFechaVencimiento() {
-        return fechaVencimiento;
+    public LocalDate getExpirationDate() {
+        return expirationDate;
     }
 
-    public void setFechaVencimiento(LocalDate fechaVencimiento) {
-        this.fechaVencimiento = fechaVencimiento;
+    public void setExpirationDate(LocalDate expirationDate) {
+        this.expirationDate = expirationDate;
     }
 
     public Boolean getPaid() {
@@ -103,15 +107,24 @@ public class Fee {
         this.datePayment = datePayment;
     }
 
+    public boolean isAdditional() {
+        return additional;
+    }
+
+    public void setAdditional(boolean additional) {
+        this.additional = additional;
+    }
+
+
     @Override
     public int hashCode() {
         final int prime = 31;
         int result = 1;
         result = prime * result + ((id == null) ? 0 : id.hashCode());
-        result = prime * result + ((venta == null) ? 0 : venta.hashCode());
+        result = prime * result + ((sale == null) ? 0 : sale.hashCode());
         result = prime * result + ((numberFee == null) ? 0 : numberFee.hashCode());
         result = prime * result + ((amount == null) ? 0 : amount.hashCode());
-        result = prime * result + ((fechaVencimiento == null) ? 0 : fechaVencimiento.hashCode());
+        result = prime * result + ((expirationDate == null) ? 0 : expirationDate.hashCode());
         result = prime * result + ((paid == null) ? 0 : paid.hashCode());
         result = prime * result + ((datePayment == null) ? 0 : datePayment.hashCode());
         return result;
@@ -131,10 +144,10 @@ public class Fee {
                 return false;
         } else if (!id.equals(other.id))
             return false;
-        if (venta == null) {
-            if (other.venta != null)
+        if (sale == null) {
+            if (other.sale != null)
                 return false;
-        } else if (!venta.equals(other.venta))
+        } else if (!sale.equals(other.sale))
             return false;
         if (numberFee == null) {
             if (other.numberFee != null)
@@ -146,10 +159,10 @@ public class Fee {
                 return false;
         } else if (!amount.equals(other.amount))
             return false;
-        if (fechaVencimiento == null) {
-            if (other.fechaVencimiento != null)
+        if (expirationDate == null) {
+            if (other.expirationDate != null)
                 return false;
-        } else if (!fechaVencimiento.equals(other.fechaVencimiento))
+        } else if (!expirationDate.equals(other.expirationDate))
             return false;
         if (paid == null) {
             if (other.paid != null)
@@ -163,6 +176,7 @@ public class Fee {
             return false;
         return true;
     }
+
 
     
 }
