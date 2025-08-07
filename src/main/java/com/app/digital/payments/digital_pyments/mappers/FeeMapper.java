@@ -24,12 +24,12 @@ public class FeeMapper {
                       "PENDING");
         
         // Información contextual
-        dto.setProductDescription(fee.getSale().getDescriptiononProduct());
+        dto.setProductDescription(fee.getSale().getDescriptionProduct());
         
         ClientDto clientDto = new ClientDto();
         clientDto.setId(fee.getSale().getClient().getId());
         clientDto.setName(fee.getSale().getClient().getName());
-        dto.setClient(clientDto);
+        // dto.setClient(clientDto);
         
         // Calcular estado
         dto.calculateStatus();

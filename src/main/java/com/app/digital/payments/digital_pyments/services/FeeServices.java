@@ -4,8 +4,6 @@ import java.time.LocalDate;
 // import java.time.temporal.ChronoUnit;
 // import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +13,6 @@ import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
-import com.app.digital.payments.digital_pyments.utils.FeeStatus;
 import com.app.digital.payments.digital_pyments.utils.Payments;
 
 import jakarta.persistence.EntityNotFoundException;
@@ -29,12 +26,10 @@ public class FeeServices implements IFeeServices {
     private IFeeRepository feeRepository;
 
     @Autowired
-    private ISalesServices saleService;
+    private IVentaServices saleService;
 
     @Autowired
     private ISaleRepository saleRepository;
-
-
 
     // metodos de registro de pago de cuota
     @Override
@@ -46,7 +41,10 @@ public class FeeServices implements IFeeServices {
             throw new IllegalStateException("La cuota ya está pagada");
         }
 
-        Sale sale = fee.getSale();
+        
+        Sale payableItem = fee.getSale();
+
+
         // if(amount > sale.getRemainingAmount()) {
         //     throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
         // }
@@ -55,40 +53,56 @@ public class FeeServices implements IFeeServices {
             throw new IllegalArgumentException("El monto del pago debe ser mayor a cero");
         }
 
-        sale.deductFromRemainingAmount(amount);
+        payableItem.deductFromRemainingAmount(amount);
 
         fee.setPaid(true);
         fee.setAmount(amount);
         fee.setDatePayment(LocalDate.now());
 
         // marcar venta como completada si el monto restante es cero o negativo
-        if (sale.getRemainingAmount() <= 0) {
-            sale.setCompleted(true);
-            sale.setRemainingAmount(0.0); // Asegurarse de que el monto restante sea cero
+        if (payableItem.getRemainingAmount() <= 0) {
+            payableItem.setCompleted(true);
+            payableItem.setRemainingAmount(0.0); // Asegurarse de que el monto restante sea cero
         }
 
+
         // Generar la proxima cuota si quedan cuotas por pendientes
-        if (sale.getRemainingAmount() > 0) {
+        if (payableItem.getRemainingAmount() > 0) {
+
+
             Fee nextFee = new Fee();
-            nextFee.setSale(sale);
+            nextFee.setSale(payableItem);
             nextFee.setNumberFee(fee.getNumberFee() + 1);
-            if(sale.getTypePayments() == Payments.MENSUAL) {
+            if(payableItem.getTypePayments() == Payments.MENSUAL) {
                 nextFee.setExpirationDate(fee.getExpirationDate().plusMonths(1));
             }
-            else if(sale.getTypePayments() == Payments.QUINCENAL) {
+            else if(payableItem.getTypePayments() == Payments.QUINCENAL) {
                 nextFee.setExpirationDate(fee.getExpirationDate().plusDays(15));
             }
-            else if(sale.getTypePayments() == Payments.SEMANAL) {
+            else if(payableItem.getTypePayments() == Payments.SEMANAL) {
                 nextFee.setExpirationDate(fee.getExpirationDate().plusWeeks(1));
             } else {
-                throw new IllegalArgumentException("Tipo de pago no soportado: " + sale.getTypePayments()); 
+                throw new IllegalArgumentException("Tipo de pago no soportado: " + payableItem.getTypePayments()); 
             }
-            nextFee.setAdditional(false);
-            sale.getFees().add(nextFee);
+
+            // agregar logica para manejar cuotas adicionales en caso de que el numero de cuotas originales se haya completado
+            //  y tengamos que generar una nueva cuota aumentar el numero de cuotas adicionales que tenemos en la venta
+            // if (payableItem.getQuiantityFees() <= payableItem.getFees().size()) {
+            //     // Si ya se han pagado todas las cuotas originales, incrementamos las cuotas adicionales
+            //     payableItem.setAdditionalFees(payableItem.getAdditionalFees() + 1);
+            //     nextFee.setAdditional(true); 
+            // }else{
+
+            //     nextFee.setAdditional(false);
+            // }
+            payableItem.getFees().add(nextFee);
             feeRepository.save(nextFee);
         }
-        
-        saleRepository.save(sale);
+            Sale sale = (Sale) payableItem;
+            sale.setFinalPaymentDate(fee.getExpirationDate());
+            sale.setRealFinalDate(LocalDate.now());
+            saleRepository.save(sale);
+
         Fee savedFee = feeRepository.save(fee);
         updateRelatedSaleStatus(fee.getSale().getId());
         
@@ -136,76 +150,4 @@ public class FeeServices implements IFeeServices {
         .toList();
     }
     
-
-    // método para obtener cuotas pendientes por cliente
-    @Override
-    @Transactional(readOnly = true)
-    public List<FeeDto> getOutstandingFeeByClientId(Long clientId) {
-        return feeRepository.findBySaleClientIdAndPaid(clientId, false).stream()
-                .map(fee-> convertToFeeDto(fee))
-                .collect(Collectors.toList());
-    }
-
-    // método para obtener cuotas prioritarias
-    // (con mayor cantidad de días de atraso)
-    // @Override
-    // @Transactional(readOnly = true)
-    // public List<FeeDto> getPriorityFees() {
-    //     LocalDate today = LocalDate.now();
-        
-    //     List<Fee> fees = feeRepository.findPriorityFees(today);
-    //     return fees.stream()
-    //         // .sorted(Comparator.comparing(Fee::getDaysLate).reversed())
-    //         .map(fee-> convertToFeeDto(fee))
-    //         .toList();
-    // }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<FeeDto> getFeesByStatus(FeeStatus status, LocalDate date) {
-        return switch (status) {
-            case TODAY -> getTodaysFees(date);
-            case PENDING -> getPendingFees();
-            // case POSTPONED -> getPostponedFees();
-            case DELAYED -> getDelayedFees(date);
-            default -> throw new IllegalArgumentException("Unexpected value: " + status);
-        };
-    }
-    
-    @Transactional(readOnly = true)
-    private List<FeeDto> getTodaysFees(LocalDate date) {
-        return feeRepository.findByExpirationDateAndPaid(date, false).stream()
-            .map(fee -> {
-                FeeDto dto = convertToFeeDto(fee);
-                return dto;
-            })
-            .toList();
-    }
-    
-    @Transactional(readOnly = true)
-    private List<FeeDto> getPendingFees() {
-        return feeRepository.findByPaidFalse().stream()
-            .map(fee-> convertToFeeDto(fee))
-            .toList();
-    }
-    
-    // @Transactional(readOnly = true)
-    // private List<FeeDto> getPostponedFees() {
-    //     return feeRepository.findByPostponedTrueAndPaidFalse().stream()
-    //         .map(fee-> convertToFeeDto(fee))
-    //         .toList();
-    // }
-
-    // método para obtener cuotas atrasadas
-    // (no pagadas y con fecha de vencimiento anterior a la fecha actual)
-    @Transactional(readOnly = true)
-    private List<FeeDto> getDelayedFees(LocalDate date) {
-        return feeRepository.findByPaidFalseAndExpirationDateBefore(date).stream()
-            .map(fee -> {
-                FeeDto dto = convertToFeeDto(fee);
-                return dto;
-            })
-            .toList();
-    }
-
 }

@@ -19,20 +19,32 @@ public class SaleRequestDto {
     private String descriptionProduct;
 
     // El precio debe ser mayor a 0
-    @NotNull(message = "El precio total no puede estar vacío")
-    @Min(value = 1, message = "El precio total debe ser mayor a 0")
-    private Double priceTotal;
+    // @NotNull(message = "El precio total no puede estar vacío")
+    // @Min(value = 1, message = "El precio total debe ser mayor a 0")
+    // private Double priceTotal;
     
     // El tipo de pago debe ser uno de los valores definidos en Payments
     @IValueOfEnum(enumClass = Payments.class, message = "El tipo de pago debe ser SEMANAL, QUINCENAL o MENSUAL")
     private String payments;
+
     @Min(value = 1, message = "La cantidad de cuotas debe ser mayor a 0")
     private Integer quantityFees;
+
+    @NotNull(message = "El valor de la cuota no puede estar vacío")
+    private Double amountFee;
+
+    @NotNull(message = "El costo no puede estar vacío")
+    private Double cost; // Costo del producto/servicio
+
+    // en caso de que sea una venta vieja
     private LocalDate dateSale;
 
     private LocalDate firstFeeDate;
+
     private Boolean payFirstFee;
+
     private Double firstFeeAmount; // Monto de la primera cuota, puede ser null si no se paga
+    
 
     private List<PaidFeeDto> paidFees; // Lista de cuotas pagadas
 
@@ -55,14 +67,7 @@ public class SaleRequestDto {
     public void setDescripcionProducto(String descriptionProduct) {
         this.descriptionProduct = descriptionProduct;
     }
-    
-    public Double getPrecioTotal() {
-        return priceTotal;
-    }
 
-    public void setPrecioTotal(Double priceTotal) {
-        this.priceTotal = priceTotal;
-    }
 
     public Integer getCantidadCuotas() {
         return quantityFees;
@@ -88,13 +93,13 @@ public class SaleRequestDto {
         this.descriptionProduct = descriptionProduct;
     }
 
-    public Double getPriceTotal() {
-        return priceTotal;
-    }
+    // public Double getPriceTotal() {
+    //     return priceTotal;
+    // }
 
-    public void setPriceTotal(Double priceTotal) {
-        this.priceTotal = priceTotal;
-    }
+    // public void setPriceTotal(Double priceTotal) {
+    //     this.priceTotal = priceTotal;
+    // }
 
     public Integer getQuantityFees() {
         return quantityFees;
@@ -157,5 +162,23 @@ public class SaleRequestDto {
     public void setPaidFees(List<PaidFeeDto> paidFees) {
         this.paidFees = paidFees;
     }
+
+    public Double getAmountFee() {
+        return amountFee;
+    }
+
+    public void setAmountFee(Double amountFee) {
+        this.amountFee = amountFee;
+    }
+
+    public Double getCost() {
+        return cost;
+    }
+
+    public void setCost(Double cost) {
+        this.cost = cost;
+    }
         
+
+    
 }

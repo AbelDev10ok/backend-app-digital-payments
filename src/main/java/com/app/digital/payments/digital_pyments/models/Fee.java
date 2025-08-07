@@ -8,7 +8,6 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
@@ -20,8 +19,8 @@ public class Fee {
     private Long id;
     
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "sale_id", nullable = false)
-    private Sale sale;
+    private Sale sale; // ¡CAMBIO AQUÍ! Ahora apunta a la clase base
+
     
     @Column(nullable = false)
     private Integer numberFee;
@@ -34,8 +33,8 @@ public class Fee {
     @Column(nullable = false)
     private Boolean paid = false;
 
-    @Column(nullable = false)
-    private boolean additional = false; 
+    // @Column(nullable = false)
+    // private boolean additional = false; 
     
     private LocalDate datePayment;
     
@@ -43,8 +42,8 @@ public class Fee {
     public Fee() {
     }
 
-    public Fee(Sale venta, Integer numberFee, Double amount, LocalDate expirationDate) {
-        this.sale = venta;
+    public Fee(Sale sale, Integer numberFee, Double amount, LocalDate expirationDate) {
+        this.sale = sale;
         this.numberFee = numberFee;
         this.amount = amount;
         this.expirationDate = expirationDate;
@@ -107,13 +106,13 @@ public class Fee {
         this.datePayment = datePayment;
     }
 
-    public boolean isAdditional() {
-        return additional;
-    }
+    // public boolean isAdditional() {
+    //     return additional;
+    // }
 
-    public void setAdditional(boolean additional) {
-        this.additional = additional;
-    }
+    // public void setAdditional(boolean additional) {
+    //     this.additional = additional;
+    // }
 
 
     @Override

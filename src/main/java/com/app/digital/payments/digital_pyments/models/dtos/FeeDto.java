@@ -1,7 +1,6 @@
 package com.app.digital.payments.digital_pyments.models.dtos;
 
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 
 public class FeeDto {
     private Long id;
@@ -13,20 +12,18 @@ public class FeeDto {
     private LocalDate paymentDate; // Renombrado a paymentDate para consistencia
     private Boolean postponed = false; // Nuevo: indica si fue pospuesta
     private String productDescription; // Nuevo: descripción del producto
-    private ClientDto client; // Nuevo: datos básicos del cliente
+    // private ClientDto client; // Nuevo: datos básicos del cliente
     
     // Campos calculados
     private String status; // "PENDING", "PAID", "POSTPONED", "LATE"
-    private Integer daysLate; // Días de atraso (si aplica)
-    private LocalDate originalExpirationDate; // Para postergaciones
 
 
     public FeeDto() {
     }
 
     public FeeDto(Long id, Long saleId, Integer numberFee, Double amount, LocalDate expirationDate, Boolean paid,
-            LocalDate paymentDate, Boolean postponed, String productDescription, ClientDto client, String status,
-            Integer daysLate, LocalDate originalExpirationDate) {
+            LocalDate paymentDate, Boolean postponed, String productDescription, ClientDto client, String status
+            ) {
         this.id = id;
         this.saleId = saleId;
         this.numberFee = numberFee;
@@ -36,10 +33,8 @@ public class FeeDto {
         this.paymentDate = paymentDate;
         this.postponed = postponed;
         this.productDescription = productDescription;
-        this.client = client;
+        // this.client = client;
         this.status = status;
-        this.daysLate = daysLate;
-        this.originalExpirationDate = originalExpirationDate;
     }
 
 
@@ -47,19 +42,9 @@ public class FeeDto {
     public void calculateStatus() {
         if (paid) {
             status = "PAID";
-            daysLate = 0;
-        } else if (postponed) {
-            status = "POSTPONED";
-            daysLate = (int) ChronoUnit.DAYS.between(
-                originalExpirationDate != null ? originalExpirationDate : expirationDate,
-                LocalDate.now()
-            );
-        } else if (expirationDate.isBefore(LocalDate.now())) {
-            status = "LATE";
-            daysLate = (int) ChronoUnit.DAYS.between(expirationDate, LocalDate.now());
-        } else {
+        }
+        else{
             status = "PENDING";
-            daysLate = 0;
         }
     }
 
@@ -135,13 +120,13 @@ public class FeeDto {
         this.productDescription = productDescription;
     }
 
-    public ClientDto getClient() {
-        return client;
-    }
+    // public ClientDto getClient() {
+    //     return client;
+    // }
 
-    public void setClient(ClientDto client) {
-        this.client = client;
-    }
+    // public void setClient(ClientDto client) {
+    //     this.client = client;
+    // }
 
     public String getStatus() {
         return status;
@@ -149,22 +134,6 @@ public class FeeDto {
 
     public void setStatus(String status) {
         this.status = status;
-    }
-
-    public Integer getDaysLate() {
-        return daysLate;
-    }
-
-    public void setDaysLate(Integer daysLate) {
-        this.daysLate = daysLate;
-    }
-
-    public LocalDate getOriginalExpirationDate() {
-        return originalExpirationDate;
-    }
-
-    public void setOriginalExpirationDate(LocalDate originalExpirationDate) {
-        this.originalExpirationDate = originalExpirationDate;
     }
     
 }

@@ -19,16 +19,16 @@ public class SaleResponseDto {
     private boolean completed; // Si está completamente pagada
     private Double amountFe;
     private List<FeeDto> fees;
-    private List<FeeDto> additionalFeesList; // Solo cuotas adicionales
-
+    private Double cost;
     
     private Integer paidFeesCount;  // Cuotas pagadas
-
-    private Integer additionalFees = 0; // Cuotas extras agregadas
+ 
+    // private Integer additionalFees = 0; // Cuotas extras agregadas
     
     private Double remainingAmount;
-
     private Integer totalFees; // Total de cuotas (originales + extras)
+
+
 
 
 
@@ -36,9 +36,9 @@ public class SaleResponseDto {
     }
 
     public SaleResponseDto(Long id, ClientDto client, String descriptionProduct, Double priceTotal,
-            LocalDate dateSale, LocalDate finalPaymentDate, Payments typePayments, Integer daysLate,
-            Integer quantityFees, boolean completed, Double amountFe, List<FeeDto> fees, Integer paidFeesCount,
-            Integer additionalFees, Double remainingAmount) {
+                           LocalDate dateSale, LocalDate finalPaymentDate, Payments typePayments,
+                           Integer daysLate, Integer quantityFees, boolean completed, Double amountFe,
+                           List<FeeDto> fees, Integer paidFeesCount, Double remainingAmount, Integer totalFees) {
         this.id = id;
         this.client = client;
         this.descriptionProduct = descriptionProduct;
@@ -52,11 +52,9 @@ public class SaleResponseDto {
         this.amountFe = amountFe;
         this.fees = fees;
         this.paidFeesCount = paidFeesCount;
-        this.additionalFees = additionalFees;
         this.remainingAmount = remainingAmount;
+        this.totalFees = totalFees;
     }
-
-    
 
     public Long getId() {
         return id;
@@ -164,13 +162,6 @@ public class SaleResponseDto {
         this.paidFeesCount = paidFeesCount;
     }
 
-    public Integer getAdditionalFees() {
-        return additionalFees;
-    }
-
-    public void setAdditionalFees(Integer additionalFees) {
-        this.additionalFees = additionalFees;
-    }
 
     public Double getRemainingAmount() {
         return remainingAmount;
@@ -187,16 +178,11 @@ public class SaleResponseDto {
     public void setTotalFees(Integer totalFees) {
         this.totalFees = totalFees;
     }
-
-    public List<FeeDto> getAdditionalFeesList() {
-        return additionalFeesList;
+    
+    public Double getCost() {
+        return cost;
     }
-
-    public void setAdditionalFeesList(List<FeeDto> additionalFeesList) {
-        this.additionalFeesList = additionalFeesList;
+    public void setCost(Double cost) {
+        this.cost = cost;
     }
-
-    
-    
-    
 }

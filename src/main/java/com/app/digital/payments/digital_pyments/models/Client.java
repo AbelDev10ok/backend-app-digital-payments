@@ -4,9 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
@@ -21,18 +25,24 @@ public class Client {
     private String telefono;
     private String email;
     private String direccion;
+
+        // --- NUEVO CAMPO: Indica si este cliente es un vendedor ---
+    @Column(name = "is_seller", nullable = false)
+    private boolean isSeller = false;
+
+    // Relación ManyToOne: Un cliente tiene un vendedor asignado (que también es un cliente)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "seller_id")
+    private Client seller;
+
+    // Relación OneToMany: La relación inversa para encontrar los clientes de un vendedor
+    @OneToMany(mappedBy = "seller")
+    private List<Client> managedClients = new ArrayList<>();
     
     @OneToMany(mappedBy = "client", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Sale> sales = new ArrayList<>();
 
     public Client() {
-    }
-
-    public Client(String name, String telefono, String email, String direccion) {
-        this.name = name;
-        this.telefono = telefono;
-        this.email = email;
-        this.direccion = direccion;
     }
 
     public Long getId() {
@@ -82,6 +92,8 @@ public class Client {
     public void setSales(List<Sale> sales) {
         this.sales = sales;
     }
+
+    
 
     @Override
     public int hashCode() {
@@ -136,6 +148,30 @@ public class Client {
         } else if (!sales.equals(other.sales))
             return false;
         return true;
+    }
+
+    public boolean isSeller() {
+        return isSeller;
+    }
+
+    public void setSeller(boolean isSeller) {
+        this.isSeller = isSeller;
+    }
+
+    public Client getSeller() {
+        return seller;
+    }
+
+    public void setSeller(Client seller) {
+        this.seller = seller;
+    }
+
+    public List<Client> getManagedClients() {
+        return managedClients;
+    }
+
+    public void setManagedClients(List<Client> managedClients) {
+        this.managedClients = managedClients;
     }
 
     
