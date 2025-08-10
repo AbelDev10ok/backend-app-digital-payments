@@ -1,5 +1,7 @@
 package com.app.digital.payments.digital_pyments.models;
 
+import java.time.LocalDateTime;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.persistence.Column;
@@ -9,7 +11,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.PrePersist;
+// import jakarta.persistence.PrePersist;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
@@ -29,14 +31,23 @@ public class Usuario {
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
-    // clase Boolean for default
-    // I could place from the bd in true but i do from prePersist 
-    private boolean enabled;
+
+    private boolean enabled = false;
 
     // un usuario puede tener un rol
     @ManyToOne  
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
+
+    @Column(unique = true)
+    private String refreshToken;
+
+    //campos para la verificación de email 
+    @Column(unique = true)
+    private String verificationToken; // Nuevo campo para el token de verificación
+    
+    private LocalDateTime tokenExpiryDate; // Nuevo campo para la fecha de expiración del token
+
 
     public Usuario() {
     }
@@ -49,10 +60,10 @@ public class Usuario {
         this.role = role;
     }
 
-    @PrePersist
-    public void prePersist() {
-        this.enabled = true; // por defecto el usuario esta habilitado
-    }
+    // @PrePersist
+    // public void prePersist() {
+    //     this.enabled = true; // por defecto el usuario esta habilitado
+    // }
 
     public Long getId() {
         return id;
@@ -93,6 +104,8 @@ public class Usuario {
     public void setRole(Role role) {
         this.role = role;
     }
+
+    
 
     @Override
     public int hashCode() {
@@ -138,6 +151,30 @@ public class Usuario {
         } else if (!role.equals(other.role))
             return false;
         return true;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public void setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
+    }
+
+    public String getVerificationToken() {
+        return verificationToken;
+    }
+
+    public void setVerificationToken(String verificationToken) {
+        this.verificationToken = verificationToken;
+    }
+
+    public LocalDateTime getTokenExpiryDate() {
+        return tokenExpiryDate;
+    }
+
+    public void setTokenExpiryDate(LocalDateTime tokenExpiryDate) {
+        this.tokenExpiryDate = tokenExpiryDate;
     }
 
     

@@ -10,7 +10,9 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import com.app.digital.payments.digital_pyments.configuration.security.JwtUtil;
 import com.app.digital.payments.digital_pyments.models.Usuario;
+import com.app.digital.payments.digital_pyments.repositories.IUsuarioRepository;
 import com.fasterxml.jackson.core.exc.StreamReadException;
 import com.fasterxml.jackson.databind.DatabindException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,18 +27,23 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 import static com.app.digital.payments.digital_pyments.configuration.security.TokenJwtConfig.*;
 
 
 public class JwtAutenticacionFilter extends UsernamePasswordAuthenticationFilter  {
 
-    private AuthenticationManager authenticationManager;
+    private final AuthenticationManager authenticationManager;
+    private final IUsuarioRepository userRepository;
+    private final JwtUtil jwtUtil;
 
-    public JwtAutenticacionFilter(AuthenticationManager authenticationManager) {
+    public JwtAutenticacionFilter(AuthenticationManager authenticationManager, IUsuarioRepository userRepository, JwtUtil jwtUtil) {
         this.authenticationManager = authenticationManager;
+        this.userRepository = userRepository;
+        this.jwtUtil = jwtUtil;
+        setFilterProcessesUrl("/auth/login"); // Endpoint para el login
     }
-
 
     @Override
     public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response)throws org.springframework.security.core.AuthenticationException {
@@ -63,37 +70,69 @@ public class JwtAutenticacionFilter extends UsernamePasswordAuthenticationFilter
     }
 
 
-     @Override
+    //  @Override
+    // protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain,
+    //         Authentication authResult) throws IOException, ServletException {
+
+    //         // claims
+    //         User user = (User) authResult.getPrincipal();
+    //         String username = user.getUsername();
+    //         Collection<? extends GrantedAuthority> authorities = authResult.getAuthorities();
+
+
+    //         // creamos clamis
+    //         Claims claims = Jwts.claims()
+    //                             .add("authorities",new ObjectMapper().writeValueAsString(authorities))
+    //                             .add("username",username)
+    //                             .build(); 
+    //         String token = Jwts.builder()
+    //                         .subject(username)
+    //                         .claims(claims)
+    //                         .expiration(new Date(System.currentTimeMillis() + 3600000))
+    //                         .issuedAt(new Date())
+    //                         .signWith(SECRET_KEY)
+    //                         .compact();
+    //         response.addHeader(HEADER_STRING,TOKEN_PREFIX + token);
+                
+    //             Map<String,String> body = new HashMap<>();
+    //             body.put("username", username);
+    //             body.put("token", token);
+    //             response.getWriter().write(new ObjectMapper().writeValueAsString(body));
+    //             response.setStatus(HttpServletResponse.SC_OK);
+    //             response.setContentType(CONTENT_TYPE);
+    // }
+
+    @Override
     protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain,
             Authentication authResult) throws IOException, ServletException {
 
-            // claims
-            User user = (User) authResult.getPrincipal();
-            String username = user.getUsername();
-            Collection<? extends GrantedAuthority> authorities = authResult.getAuthorities();
+        User user = (User) authResult.getPrincipal();
+        String username = user.getUsername();
 
+        // Obtener el usuario de la base de datos para generar los tokens y guardar el refresh token
+        Usuario userDb = userRepository.findByEmail(username).orElseThrow(() -> 
+            new UsernameNotFoundException("User not found in database"));
 
-            // creamos clamis
-            Claims claims = Jwts.claims()
-                                .add("authorities",new ObjectMapper().writeValueAsString(authorities))
-                                .add("username",username)
-                                .build(); 
-            String token = Jwts.builder()
-                            .subject(username)
-                            .claims(claims)
-                            .expiration(new Date(System.currentTimeMillis() + 3600000))
-                            .issuedAt(new Date())
-                            .signWith(SECRET_KEY)
-                            .compact();
-            response.addHeader(HEADER_STRING,TOKEN_PREFIX + token);
-                
-                Map<String,String> body = new HashMap<>();
-                body.put("username", username);
-                body.put("token", token);
-                response.getWriter().write(new ObjectMapper().writeValueAsString(body));
-                response.setStatus(HttpServletResponse.SC_OK);
-                response.setContentType(CONTENT_TYPE);
+        // Generar ambos tokens
+        String accessToken = jwtUtil.generateAccessToken(userDb);
+        String refreshToken = jwtUtil.generateRefreshToken(userDb);
+
+        // Guardar el refresh token en la base de datos
+        userDb.setRefreshToken(refreshToken);
+        userRepository.save(userDb);
+        
+        // Devolver ambos tokens en la respuesta
+        Map<String, Object> body = new HashMap<>();
+        body.put("username", username);
+        body.put("accessToken", accessToken);
+        body.put("refreshToken", refreshToken);
+
+        response.addHeader(HEADER_STRING, TOKEN_PREFIX + accessToken);
+        response.getWriter().write(new ObjectMapper().writeValueAsString(body));
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType(CONTENT_TYPE);
     }
+    
 
 
         @Override

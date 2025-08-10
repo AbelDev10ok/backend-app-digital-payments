@@ -14,9 +14,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.app.digital.payments.digital_pyments.configuration.security.JwtUtil;
@@ -47,19 +49,47 @@ public class AuthController {
     @Autowired
     private ValidationEntities validationEntities;
 
-    @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@Valid @RequestBody UsuarioAuth entity,BindingResult result ) {   
-        if(result.hasFieldErrors()){
-            return validationEntities.validation(result);
-        }
-        try {
-            // entity.setAdmin(false);
-            userServices.saveUser(entity);     
-            return ResponseEntity.ok().body("success");
+    // @PostMapping("/register")
+    // public ResponseEntity<?> registerUser(@Valid @RequestBody UsuarioAuth entity,BindingResult result ) {   
+    //     if(result.hasFieldErrors()){
+    //         return validationEntities.validation(result);
+    //     }
+    //     try {
+    //         // entity.setAdmin(false);
+    //         userServices.saveUser(entity);     
+    //         return ResponseEntity.ok().body("success");
             
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+    //     } catch (Exception e) {
+    //         return ResponseEntity.badRequest().body(e.getMessage());
+    //     }
+    // }
+
+    @GetMapping("/verify")
+    public ResponseEntity<String> verifyUser(@RequestParam String token) {
+        try {
+            Usuario usuarioVerificado = userServices.verifyUser(token);
+            if (usuarioVerificado.isEnabled()) {
+                return ResponseEntity.ok("¡Correo verificado con éxito! Ya puedes iniciar sesión.");
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Error al verificar el correo.");
+            }
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         }
+    }
+    
+    // ... el método registerUser() ahora solo llama al servicio
+    @PostMapping("/register")
+    public ResponseEntity<?> registerUser(@Valid @RequestBody UsuarioAuth entity, BindingResult result ) {   
+         if(result.hasFieldErrors()){
+             return validationEntities.validation(result);
+         }
+         try {
+             userServices.saveUser(entity);    
+             return ResponseEntity.ok().body("Registro exitoso. Revisa tu correo para verificar tu cuenta.");
+         } catch (Exception e) {
+             return ResponseEntity.badRequest().body(e.getMessage());
+         }
     }
 
     @PostMapping("/login")

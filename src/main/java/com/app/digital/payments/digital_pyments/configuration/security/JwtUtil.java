@@ -7,8 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
@@ -42,9 +40,47 @@ public class JwtUtil {
         return extractClaim(token, Claims::getExpiration);
     }
 
-    private Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
+    // Sobrecarga para generar el ACCESS TOKEN con un tiempo de expiración corto
+    public String generateAccessToken(Usuario user) throws JsonProcessingException {
+        List<String> roles = getAuthoritiesFromRoles(user.getRole());
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("authorities", new ObjectMapper().writeValueAsString(roles));
+
+        return Jwts.builder()
+                .claims(claims)
+                .signWith(SECRET_KEY)
+                .subject(user.getEmail())
+                .issuedAt(new Date(System.currentTimeMillis()))
+                // .expiration(new Date(System.currentTimeMillis() + 1000 * 60 * 15)) // 15 minutos
+                .expiration(new Date(System.currentTimeMillis() + 1000 * 60 * 1)) // 1 minuto para pruebas
+
+                .compact();
     }
+
+    // Nuevo método para generar el REFRESH TOKEN con un tiempo de expiración largo
+    public String generateRefreshToken(Usuario user) {
+        return Jwts.builder()
+                .signWith(SECRET_KEY)
+                .subject(user.getEmail())
+                .issuedAt(new Date(System.currentTimeMillis()))
+                // .expiration(new Date(System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 30)) // 30 días
+                .expiration(new Date(System.currentTimeMillis() + 1000L * 60 * 10)) // 10 minutos para pruebas
+                .compact();
+    }
+    
+    // Nuevo método para validar la expiración de cualquier token
+    public Boolean isTokenExpired(String token) {
+        try {
+            return extractExpiration(token).before(new Date());
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+
+    // private Boolean isTokenExpired(String token) {
+    //     return extractExpiration(token).before(new Date());
+    // }
 
     
     public Boolean validateToken(String token, UserDetails userDetails) {
@@ -80,7 +116,7 @@ public class JwtUtil {
 
     private List<String> getAuthoritiesFromRoles(Role roles) {
         
-        return Collections.singletonList("ROLE_" + roles.getName().toUpperCase());
+        return Collections.singletonList(roles.getName().toUpperCase());
 
         // return roles.stream()
         //         .map(role -> new SimpleGrantedAuthority(role.getName()))

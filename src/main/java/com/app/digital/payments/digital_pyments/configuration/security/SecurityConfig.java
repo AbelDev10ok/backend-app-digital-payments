@@ -23,6 +23,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import com.app.digital.payments.digital_pyments.configuration.security.filter.JwtAutenticacionFilter;
 import com.app.digital.payments.digital_pyments.configuration.security.filter.JwtValidationFilter;
 import com.app.digital.payments.digital_pyments.repositories.IUsuarioRepository;
+
 import org.springframework.web.filter.CorsFilter;
 
 @Configuration
@@ -32,6 +33,8 @@ public class SecurityConfig {
     @Autowired
     private IUsuarioRepository userRepository; // Inject the repository into SecurityConfig
 
+    @Autowired
+    private JwtUtil jwtUtil; // Inject the JwtUtil for JWT operations
 
     @Autowired
     private AuthenticationConfiguration authenticationConfiguration;
@@ -51,13 +54,15 @@ public class SecurityConfig {
     @Bean
     DefaultSecurityFilterChain filterChain(HttpSecurity http) throws Exception{
         return http.authorizeHttpRequests((auth) -> auth
-                .requestMatchers(HttpMethod.POST ,"/auth/**").permitAll()
-                // .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll() // Permite acceso a Swagger UI
+                .requestMatchers(HttpMethod.POST ,"/auth/*").permitAll()
+                .requestMatchers(HttpMethod.GET ,"/auth/*").permitAll()
+                .requestMatchers(HttpMethod.POST ,"/auth/refresh-token").permitAll() // Permitir acceso al endpoint de refresh token
+                .requestMatchers(HttpMethod.POST ,"/email/send").permitAll()
 
 
                 
                 .anyRequest().authenticated())
-                .addFilter(new JwtAutenticacionFilter(authenticationManager()))
+                .addFilter(new JwtAutenticacionFilter(authenticationManager(), userRepository, jwtUtil))
                 .addFilter(new JwtValidationFilter(authenticationManager(),userRepository))
                 .csrf(config -> config.disable())
                 .cors(cors->cors.configurationSource(corsConfigurationSource()))
