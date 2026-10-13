@@ -1,23 +1,37 @@
 package com.app.digital.payments.digital_pyments.models;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.Filter;
+
+import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
+
 @Entity
 @Table  (name = "fee")
+@Filter(name = "tenantFilter", condition = "business_id = :businessId")
 public class Fee {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
+    // Negocio (tenant) al que pertenece la cuota (el mismo de su venta)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "business_id", nullable = false)
+    private Business business;
+
     @ManyToOne(fetch = FetchType.LAZY)
     private Sale sale; // ¡CAMBIO AQUÍ! Ahora apunta a la clase base
 
@@ -25,7 +39,7 @@ public class Fee {
     @Column(nullable = false)
     private Integer numberFee;
     
-    private Double amount;
+    private BigDecimal amount;
     
     @Column(nullable = false)
     private LocalDate expirationDate;
@@ -38,11 +52,15 @@ public class Fee {
     
     private LocalDate datePayment;
     
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = true)
+    private PaymentMethod paymentMethod;
+    
 
     public Fee() {
     }
 
-    public Fee(Sale sale, Integer numberFee, Double amount, LocalDate expirationDate) {
+    public Fee(Sale sale, Integer numberFee, BigDecimal amount, LocalDate expirationDate) {
         this.sale = sale;
         this.numberFee = numberFee;
         this.amount = amount;
@@ -66,6 +84,14 @@ public class Fee {
         this.sale = sale;
     }
 
+    public Business getBusiness() {
+        return business;
+    }
+
+    public void setBusiness(Business business) {
+        this.business = business;
+    }
+
     public Integer getNumberFee() {
         return numberFee;
     }
@@ -74,11 +100,11 @@ public class Fee {
         this.numberFee = numberFee;
     }
 
-    public Double getAmount() {
+    public BigDecimal getAmount() {
         return amount;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }
 
@@ -104,6 +130,14 @@ public class Fee {
 
     public void setDatePayment(LocalDate datePayment) {
         this.datePayment = datePayment;
+    }
+
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod;
+    }
+
+    public void setPaymentMethod(PaymentMethod paymentMethod) {
+        this.paymentMethod = paymentMethod;
     }
 
     // public boolean isAdditional() {

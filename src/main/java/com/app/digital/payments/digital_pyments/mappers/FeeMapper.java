@@ -18,6 +18,7 @@ public class FeeMapper {
         // dto.setOriginalExpirationDate(fee.getExpirationOrigialDate());
         dto.setPaid(fee.getPaid());
         dto.setPaymentDate(fee.getDatePayment());
+        dto.setPaymentMethod(fee.getPaymentMethod() != null ? fee.getPaymentMethod().name() : null);
         // dto.setPostponed(fee.getPostponed());
 
         dto.setStatus(fee.getPaid() ? "PAID" :  

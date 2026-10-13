@@ -1,22 +1,28 @@
 package com.app.digital.payments.digital_pyments.models.dtos;
 
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public class ClientRequestDto {
     @NotBlank(message = "El nombre es obligatorio")
-    @Size(min = 2, max = 15, message = "El nombre debe tener entre 2 y 100 caracteres")
+    @Size(min = 2, max = 15, message = "El nombre debe tener entre 2 y 15 caracteres")
     private String name;
     @NotBlank(message = "El teléfono es obligatorio")
     @Pattern(regexp = "^[0-9]{10,15}$", message = "El teléfono debe contener solo números y tener entre 10 y 15 dígitos")
     private String telefono;
     @Email(message = "El email debe tener un formato válido")
     private String email;
-    @Size(max = 20, message = "La dirección no puede exceder los 50 caracteres")
+    @Size(max = 20, message = "La dirección no puede exceder los 20 caracteres")
     private String direccion;
+
+    // validar dni unico
+    // PATTERN de 8 numeros
+    @Pattern(regexp = "^[0-9]{8}$", message = "El DNI debe contener solo números y tener 8 dígitos")    
+    private String dni;
+
 
     // El ID del cliente que será el vendedor de este nuevo cliente.
     // Usamos Long para el ID. Puede ser nulo si no tiene un vendedor asignado.
@@ -26,16 +32,12 @@ public class ClientRequestDto {
     public ClientRequestDto() {
     }   
 
-    public ClientRequestDto(
-            @NotBlank(message = "El nombre es obligatorio") @Size(min = 2, max = 15, message = "El nombre debe tener entre 2 y 100 caracteres") String name,
-            @NotBlank(message = "El teléfono es obligatorio") @Pattern(regexp = "^[0-9]{10,15}$", message = "El teléfono debe contener solo números y tener entre 10 y 15 dígitos") String telefono,
-            @Email(message = "El email debe tener un formato válido") String email,
-            @Size(max = 20, message = "La dirección no puede exceder los 50 caracteres") String direccion,
-            @NotNull(message = "El campo 'isSeller' es obligatorio") boolean isSeller, Long sellerId) {
+    public ClientRequestDto(String name, String telefono, String email, String direccion, String dni, Long sellerId) {
         this.name = name;
         this.telefono = telefono;
         this.email = email;
         this.direccion = direccion;
+        this.dni = dni;
         this.sellerId = sellerId;
     }
 
@@ -80,5 +82,11 @@ public class ClientRequestDto {
     }
 
 
+    public String getDni() {
+        return dni;
+    }
+    public void setDni(String dni) {
+        this.dni = dni;
+    }
     
 }

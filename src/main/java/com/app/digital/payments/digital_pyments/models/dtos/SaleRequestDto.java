@@ -1,22 +1,26 @@
 package com.app.digital.payments.digital_pyments.models.dtos;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
 import com.app.digital.payments.digital_pyments.utils.IValueOfEnum;
 import com.app.digital.payments.digital_pyments.utils.Payments;
+import com.app.digital.payments.digital_pyments.utils.SaleKind;
 
 import io.micrometer.common.lang.NonNull;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 public class SaleRequestDto {
 
     @NonNull
     private Long clientId;
-    @NotBlank(message = "La descripción del producto no puede estar vacía")
     private String descriptionProduct;
+
+    // Tipo de transacción: VENTA o PRESTAMO (obligatorio)
+    @IValueOfEnum(enumClass = SaleKind.class, message = "El tipo de transacción debe ser VENTA o PRESTAMO")
+    private String kind;
 
     // El precio debe ser mayor a 0
     // @NotNull(message = "El precio total no puede estar vacío")
@@ -24,17 +28,20 @@ public class SaleRequestDto {
     // private Double priceTotal;
     
     // El tipo de pago debe ser uno de los valores definidos en Payments
-    @IValueOfEnum(enumClass = Payments.class, message = "El tipo de pago debe ser SEMANAL, QUINCENAL o MENSUAL")
+    @IValueOfEnum(enumClass = Payments.class, message = "El tipo de pago debe ser SEMANAL, QUINCENAL o MENSUAL o CONTADO")
     private String payments;
 
     @Min(value = 1, message = "La cantidad de cuotas debe ser mayor a 0")
     private Integer quantityFees;
 
     @NotNull(message = "El valor de la cuota no puede estar vacío")
-    private Double amountFee;
+    private BigDecimal amountFee;
 
     @NotNull(message = "El costo no puede estar vacío")
-    private Double cost; // Costo del producto/servicio
+    private BigDecimal cost; // Costo del producto/servicio
+
+    // Tasa de interés del préstamo (solo PRESTAMO, opcional)
+    private BigDecimal interestRate;
 
     // en caso de que sea una venta vieja
     private LocalDate dateSale;
@@ -43,38 +50,23 @@ public class SaleRequestDto {
 
     private Boolean payFirstFee;
 
-    private Double firstFeeAmount; // Monto de la primera cuota, puede ser null si no se paga
+    private BigDecimal firstFeeAmount; // Monto de la primera cuota, puede ser null si no se paga
     
 
     private List<PaidFeeDto> paidFees; // Lista de cuotas pagadas
 
+    // Categoría de producto (solo obligatoria para VENTA)
+    private Long productType;
+
+    // Producto del catálogo (opcional, solo VENTA)
+    private Long product;
+
+    // Cantidad de unidades vendidas (solo VENTA, opcional; por defecto 1)
+    @Min(value = 1, message = "La cantidad debe ser mayor a 0")
+    private Integer quantity;
+
     public SaleRequestDto() {
     
-    }
-    
-    public Long getClienteId() {
-        return clientId;
-    }
-
-    public void setClienteId(Long clientId) {
-        this.clientId = clientId;
-    }
-
-    public String getDescripcionProducto() {
-        return descriptionProduct;
-    }
-
-    public void setDescripcionProducto(String descriptionProduct) {
-        this.descriptionProduct = descriptionProduct;
-    }
-
-
-    public Integer getCantidadCuotas() {
-        return quantityFees;
-    }
-
-    public void setCantidadCuotas(Integer quantityFees) {
-        this.quantityFees = quantityFees;
     }
 
     public Long getClientId() {
@@ -93,13 +85,13 @@ public class SaleRequestDto {
         this.descriptionProduct = descriptionProduct;
     }
 
-    // public Double getPriceTotal() {
-    //     return priceTotal;
-    // }
+    public String getPayments() {
+        return payments;
+    }
 
-    // public void setPriceTotal(Double priceTotal) {
-    //     this.priceTotal = priceTotal;
-    // }
+    public void setPayments(String payments) {
+        this.payments = payments;
+    }
 
     public Integer getQuantityFees() {
         return quantityFees;
@@ -107,6 +99,30 @@ public class SaleRequestDto {
 
     public void setQuantityFees(Integer quantityFees) {
         this.quantityFees = quantityFees;
+    }
+
+    public BigDecimal getAmountFee() {
+        return amountFee;
+    }
+
+    public void setAmountFee(BigDecimal amountFee) {
+        this.amountFee = amountFee;
+    }
+
+    public BigDecimal getCost() {
+        return cost;
+    }
+
+    public void setCost(BigDecimal cost) {
+        this.cost = cost;
+    }
+
+    public BigDecimal getInterestRate() {
+        return interestRate;
+    }
+
+    public void setInterestRate(BigDecimal interestRate) {
+        this.interestRate = interestRate;
     }
 
     public LocalDate getDateSale() {
@@ -125,34 +141,20 @@ public class SaleRequestDto {
         this.firstFeeDate = firstFeeDate;
     }
 
-
     public Boolean getPayFirstFee() {
         return payFirstFee;
     }
-
 
     public void setPayFirstFee(Boolean payFirstFee) {
         this.payFirstFee = payFirstFee;
     }
 
-
-
-    public Double getFirstFeeAmount() {
+    public BigDecimal getFirstFeeAmount() {
         return firstFeeAmount;
     }
 
-
-
-    public void setFirstFeeAmount(Double firstFeeAmount) {
+    public void setFirstFeeAmount(BigDecimal firstFeeAmount) {
         this.firstFeeAmount = firstFeeAmount;
-    }
-
-    public String getPayments() {
-        return payments;
-    }
-
-    public void setPayments(String payments) {
-        this.payments = payments;
     }
 
     public List<PaidFeeDto> getPaidFees() {
@@ -163,22 +165,37 @@ public class SaleRequestDto {
         this.paidFees = paidFees;
     }
 
-    public Double getAmountFee() {
-        return amountFee;
+    public Long getProductType() {
+        return productType;
     }
 
-    public void setAmountFee(Double amountFee) {
-        this.amountFee = amountFee;
+    public void setProductType(Long productType) {
+        this.productType = productType;
     }
 
-    public Double getCost() {
-        return cost;
+    public Long getProduct() {
+        return product;
     }
 
-    public void setCost(Double cost) {
-        this.cost = cost;
+    public void setProduct(Long product) {
+        this.product = product;
     }
-        
+
+    public Integer getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(Integer quantity) {
+        this.quantity = quantity;
+    }
+
+    public String getKind() {
+        return kind;
+    }
+
+    public void setKind(String kind) {
+        this.kind = kind;
+    }
 
     
 }

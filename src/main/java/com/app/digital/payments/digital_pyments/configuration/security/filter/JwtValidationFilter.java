@@ -1,6 +1,5 @@
 package com.app.digital.payments.digital_pyments.configuration.security.filter;
 
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -8,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -17,6 +18,8 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 
 import com.app.digital.payments.digital_pyments.models.Usuario;
 import com.app.digital.payments.digital_pyments.repositories.IUsuarioRepository;
+import com.app.digital.payments.digital_pyments.utils.SecurityUtils;
+import com.app.digital.payments.digital_pyments.utils.TenantContext;
 import com.fasterxml.jackson.core.exc.StreamReadException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DatabindException;
@@ -35,10 +38,12 @@ import static com.app.digital.payments.digital_pyments.configuration.security.To
 
 public class JwtValidationFilter extends BasicAuthenticationFilter{
 
+    private static final Logger log = LoggerFactory.getLogger(JwtValidationFilter.class);
+
     private final IUsuarioRepository userRepository;
 
 
-    public JwtValidationFilter(AuthenticationManager authenticationManager,IUsuarioRepository userRepository) {
+    public JwtValidationFilter(AuthenticationManager authenticationManager, IUsuarioRepository userRepository) {
         super(authenticationManager);
         this.userRepository = userRepository;
     }
@@ -64,7 +69,7 @@ public class JwtValidationFilter extends BasicAuthenticationFilter{
                             .orElseThrow(() -> new JwtException("User not found in database"));
                     // user is enabled
                     if (!user.isEnabled()) {
-                        System.out.println(user.isEnabled());
+                        log.info("Intento de acceso de usuario deshabilitado: {}", username);
                         throw new JwtException("User is disabled");
                     }
 
@@ -89,26 +94,38 @@ public class JwtValidationFilter extends BasicAuthenticationFilter{
                     }
 
                     // null porque el password solo se valida cuando creamos el token
-                    
+
                     // INICIAMOS SESCION Y AUTHENTICAMOS
                     UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken (user, null, authorities);
                     SecurityContextHolder .getContext().setAuthentication(authenticationToken);
-                    
+
+                    // Tenancy: el negocio del usuario queda en el contexto del
+                    // request. El filtro Hibernate se activa despues, en
+                    // TenantFilterInterceptor (aqui todavia no existe la sesion
+                    // del request: OSIV abre el EntityManager mas tarde).
+                    if (user.getBusiness() == null || user.getBusiness().getId() == null) {
+                        throw new JwtException("User has no business assigned");
+                    }
+                    TenantContext.setBusinessId(user.getBusiness().getId());
+
                     // continuar con los demas filtros
                     chain.doFilter(request, response);
                     return;
 
                 } catch (JwtException e) {
-                    
+
+                    log.warn("Token invalido desde {}: {}", SecurityUtils.clientIp(request), e.getMessage());
+
                     Map<String,String> body = new HashMap<>();
-                    body.put("message", e.getMessage());
+                    body.put("message", "Token no valido o expirado.");
                     body.put("error", "token no es valido");
                     body.put("status", String.valueOf(HttpServletResponse.SC_UNAUTHORIZED));
-                    body.put("request", request.getHeaderNames().toString());
 
                     response.getWriter().write(new ObjectMapper().writeValueAsString(body));
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                     response.setContentType(CONTENT_TYPE);
+                } finally {
+                    TenantContext.clear();
                 }
 
     }

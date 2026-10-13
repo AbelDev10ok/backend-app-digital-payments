@@ -1,32 +1,54 @@
 package com.app.digital.payments.digital_pyments.models.dtos;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
 import com.app.digital.payments.digital_pyments.utils.Payments;
+import com.app.digital.payments.digital_pyments.utils.SaleKind;
 
 
 public class SaleResponseDto {
     private Long id;
     private ClientDto client;
     private String descriptionProduct;
-    private Double priceTotal;
+    private BigDecimal priceTotal;
     private LocalDate dateSale;
-    private LocalDate finalPaymentDate; // Fecha final de pago
+    private LocalDate finalPaymentDate; // Fecha final de pago estimada 
+    private LocalDate realFinalPayment;
     private Payments typePayments;
-    private Integer daysLate = 0; 
     private Integer quantityFees;
-    private boolean completed; // Si está completamente pagada
-    private Double amountFe;
+    // private boolean completed; // Si está completamente pagada
+    private BigDecimal amountFee;
     private List<FeeDto> fees;
-    private Double cost;
+    private BigDecimal cost;
+    private String status;
+
+    private BigDecimal interestRate;
+
+    private ProductTypeDto productType;
+
+    // Producto del catálogo asociado (opcional)
+    private ProductDto product;
+
+    private SaleKind kind;
+
+    // Cantidad de unidades del producto vendidas (V9; solo VENTA)
+    private Integer quantity;
+
     
     private Integer paidFeesCount;  // Cuotas pagadas
  
     // private Integer additionalFees = 0; // Cuotas extras agregadas
     
-    private Double remainingAmount;
+    private BigDecimal remainingAmount;
     private Integer totalFees; // Total de cuotas (originales + extras)
+
+    // Monto ya cobrado antes de la anulación (suma de cuotas pagadas)
+    private BigDecimal collectedAmount;
+
+    // Monto devuelto al cliente al anular (0 si el monto cobrado se retiene)
+    private BigDecimal refundAmount;
 
 
 
@@ -35,10 +57,11 @@ public class SaleResponseDto {
     public SaleResponseDto() {
     }
 
-    public SaleResponseDto(Long id, ClientDto client, String descriptionProduct, Double priceTotal,
+    public SaleResponseDto(Long id, ClientDto client, String descriptionProduct, BigDecimal priceTotal,
                            LocalDate dateSale, LocalDate finalPaymentDate, Payments typePayments,
-                           Integer daysLate, Integer quantityFees, boolean completed, Double amountFe,
-                           List<FeeDto> fees, Integer paidFeesCount, Double remainingAmount, Integer totalFees) {
+                        Integer quantityFees, boolean completed, BigDecimal amountFe,
+                           List<FeeDto> fees, Integer paidFeesCount, BigDecimal remainingAmount, Integer totalFees,
+                           String status) {
         this.id = id;
         this.client = client;
         this.descriptionProduct = descriptionProduct;
@@ -46,14 +69,21 @@ public class SaleResponseDto {
         this.dateSale = dateSale;
         this.finalPaymentDate = finalPaymentDate;
         this.typePayments = typePayments;
-        this.daysLate = daysLate;
         this.quantityFees = quantityFees;
-        this.completed = completed;
-        this.amountFe = amountFe;
+        // this.completed = completed;
+        this.amountFee = amountFe;
         this.fees = fees;
         this.paidFeesCount = paidFeesCount;
         this.remainingAmount = remainingAmount;
         this.totalFees = totalFees;
+        this.status = status;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public Long getId() {
@@ -76,15 +106,17 @@ public class SaleResponseDto {
         return descriptionProduct;
     }
 
+    
+
     public void setDescriptionProduct(String descriptionProduct) {
         this.descriptionProduct = descriptionProduct;
     }
 
-    public Double getPriceTotal() {
+    public BigDecimal getPriceTotal() {
         return priceTotal;
     }
 
-    public void setPriceTotal(Double priceTotal) {
+    public void setPriceTotal(BigDecimal priceTotal) {
         this.priceTotal = priceTotal;
     }
 
@@ -112,13 +144,6 @@ public class SaleResponseDto {
         this.typePayments = typePayments;
     }
 
-    public Integer getDaysLate() {
-        return daysLate;
-    }
-
-    public void setDaysLate(Integer daysLate) {
-        this.daysLate = daysLate;
-    }
 
     public Integer getQuantityFees() {
         return quantityFees;
@@ -128,20 +153,20 @@ public class SaleResponseDto {
         this.quantityFees = quantityFees;
     }
 
-    public boolean isCompleted() {
-        return completed;
-    }
+    // public boolean isCompleted() {
+    //     return completed;
+    // }
 
-    public void setCompleted(boolean completed) {
-        this.completed = completed;
-    }
+    // public void setCompleted(boolean completed) {
+    //     this.completed = completed;
+    // }
 
-    public Double getAmountFe() {
-        return amountFe;
-    }
+    public BigDecimal getAmountFee() {
+        return amountFee;
+    }       
 
-    public void setAmountFe(Double amountFe) {
-        this.amountFe = amountFe;
+    public void setAmountFee(BigDecimal amountFee) {
+        this.amountFee = amountFee;
     }
 
     public List<FeeDto> getFees() {
@@ -163,12 +188,28 @@ public class SaleResponseDto {
     }
 
 
-    public Double getRemainingAmount() {
+    public BigDecimal getRemainingAmount() {
         return remainingAmount;
     }
 
-    public void setRemainingAmount(Double remainingAmount) {
+    public void setRemainingAmount(BigDecimal remainingAmount) {
         this.remainingAmount = remainingAmount;
+    }
+
+    public BigDecimal getCollectedAmount() {
+        return collectedAmount;
+    }
+
+    public void setCollectedAmount(BigDecimal collectedAmount) {
+        this.collectedAmount = collectedAmount;
+    }
+
+    public BigDecimal getRefundAmount() {
+        return refundAmount;
+    }
+
+    public void setRefundAmount(BigDecimal refundAmount) {
+        this.refundAmount = refundAmount;
     }
 
     public Integer getTotalFees() {
@@ -179,10 +220,60 @@ public class SaleResponseDto {
         this.totalFees = totalFees;
     }
     
-    public Double getCost() {
+    public BigDecimal getCost() {
         return cost;
     }
-    public void setCost(Double cost) {
+    public void setCost(BigDecimal cost) {
         this.cost = cost;
     }
+
+    public BigDecimal getInterestRate() {
+        return interestRate;
+    }
+
+    public void setInterestRate(BigDecimal interestRate) {
+        this.interestRate = interestRate;
+    }
+
+    public ProductTypeDto getProductType() {
+        return productType;
+    }
+
+    public void setProductType(ProductTypeDto productType) {
+        this.productType = productType;
+    }
+
+    public ProductDto getProduct() {
+        return product;
+    }
+
+    public void setProduct(ProductDto product) {
+        this.product = product;
+    }
+
+    public SaleKind getKind() {
+        return kind;
+    }
+
+    public void setKind(SaleKind kind) {
+        this.kind = kind;
+    }
+
+    public Integer getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(Integer quantity) {
+        this.quantity = quantity;
+    }
+
+    public LocalDate getRealFinalPayment() {
+        return realFinalPayment;
+    }
+
+    public void setRealFinalPayment(LocalDate realFinalPayment) {
+        this.realFinalPayment = realFinalPayment;
+    }
+
+    
 }

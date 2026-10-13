@@ -1,6 +1,5 @@
 package com.app.digital.payments.digital_pyments.controllers;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,9 +17,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 @RequestMapping("/email")
 public class EmailController {
 
-    @Autowired
-    private EmailServices emailServices;
-    
+    private final EmailServices emailServices;
+
+    public EmailController(EmailServices emailServices) {
+        this.emailServices = emailServices;
+    }
 
     @PostMapping("/send")
     public ResponseEntity<String> sendEmail(@RequestBody EmailDto entity) throws MessagingException {        

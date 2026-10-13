@@ -1,10 +1,13 @@
 package com.app.digital.payments.digital_pyments.models;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 import com.app.digital.payments.digital_pyments.utils.Payments;
+import com.app.digital.payments.digital_pyments.utils.SaleKind;
+import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -20,13 +23,21 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.Filter;
+
 @Entity // Sigue siendo una entidad
 @Table(name = "sale") // Su propia tabla para las propiedades específicas (si las hubiera)
+@Filter(name = "tenantFilter", condition = "business_id = :businessId")
 public class Sale{ // Ahora extiende PayableItem
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // Negocio (tenant) al que pertenece la transaccion
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "business_id", nullable = false)
+    private Business business;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", nullable = false)
@@ -36,7 +47,7 @@ public class Sale{ // Ahora extiende PayableItem
     private String descriptionProduct; // Descripción del producto/servicio
 
     @Column(nullable = false)
-    private Double priceTotal; // Precio total original del ítem
+    private BigDecimal priceTotal; // Precio total original del ítem
 
     @Column(nullable = false)
     private LocalDate dateCreation; // Fecha de creación/venta/préstamo
@@ -49,38 +60,60 @@ public class Sale{ // Ahora extiende PayableItem
     private Integer quiantityFees; // Cantidad de cuotas originales
 
     @Column(nullable = false)
-    private Double cost;
+    private BigDecimal cost;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal interestRate; // Tasa de interés del préstamo (solo PRESTAMO)
 
     @Column(nullable = false)
-    private Double remainingAmount; // Monto restante por pagar (se inicializará)
+    private BigDecimal remainingAmount; // Monto restante por pagar
 
     @Column(nullable = false)
-    private Double amountFee; // Monto de cada cuota
+    private BigDecimal amountFee; // Monto de cada cuota
 
     @Column(nullable = false)
-    private String productType;
+    @Enumerated(EnumType.STRING)
+    private SaleKind kind; // Tipo de transacción: VENTA o PRESTAMO
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_type_id", nullable = true)
+    private ProductType productType; // Categoría de producto (solo para VENTA)
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", nullable = true)
+    private Product product; // Producto del catálogo (opcional, solo VENTA)
+
+    // Cantidad de unidades del producto vendidas (V9). 1 por defecto; solo aplica a VENTA
+    @Column(nullable = false)
+    private Integer quantity = 1;
 
     @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Fee> fees = new ArrayList<>(); // Lista de cuotas asociadas
 
     private LocalDate finalPaymentDate; // Fecha de pago final esperada
     private LocalDate realFinalDate;    // Fecha de pago final real
-    private Integer daysLate = 0;       // Días de retraso
-    private boolean completed;          // Si está completamente pagada
+    // private boolean completed;          // Si está completamente pagada
     
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private SaleStatus status;
 
-    // Constructor para inicializar remainingAmount (puedes ajustarlo si prefieres setters)
+    @Column(nullable = false)
+    private BigDecimal refundAmount = BigDecimal.ZERO; // campo para el monto del reembolso
+
     public Sale() {
-        this.remainingAmount = this.priceTotal; // Esto solo funciona si priceTotal se establece antes
-                                                // Es mejor inicializarlo en un constructor específico
-                                                // o con un método setter después de setPriceTotal.
     }
 
-
-    public void deductFromRemainingAmount(Double amount) {
-        this.remainingAmount = Math.max(0, this.remainingAmount - amount);
-        if(this.remainingAmount <= 0) {
-            this.completed = true;
+    public void deductFromRemainingAmount(BigDecimal amount) {
+        if (amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException("El monto a deducir no puede ser negativo o nulo");
+        }
+        this.remainingAmount = this.remainingAmount == null ? BigDecimal.ZERO : this.remainingAmount.subtract(amount).max(BigDecimal.ZERO);
+        if (this.remainingAmount.signum() <= 0) {
+            this.realFinalDate = LocalDate.now();
+            this.status = SaleStatus.COMPLETED;
+        } else {
+            this.status = SaleStatus.ACTIVE;
         }
     }
 
@@ -94,6 +127,14 @@ public class Sale{ // Ahora extiende PayableItem
         this.id = id;
     }
 
+    public Business getBusiness() {
+        return business;
+    }
+
+    public void setBusiness(Business business) {
+        this.business = business;
+    }
+
 
     public Client getClient() {
         return client;
@@ -105,12 +146,12 @@ public class Sale{ // Ahora extiende PayableItem
     }
 
 
-    public Double getPriceTotal() {
+    public BigDecimal getPriceTotal() {
         return priceTotal;
     }
 
 
-    public void setPriceTotal(Double priceTotal) {
+    public void setPriceTotal(BigDecimal priceTotal) {
         this.priceTotal = priceTotal;
     }
 
@@ -144,22 +185,22 @@ public class Sale{ // Ahora extiende PayableItem
         this.quiantityFees = quiantityFees;
     }
 
-    public Double getRemainingAmount() {
+    public BigDecimal getRemainingAmount() {
         return remainingAmount;
     }
 
 
-    public void setRemainingAmount(Double remainingAmount) {
+    public void setRemainingAmount(BigDecimal remainingAmount) {
         this.remainingAmount = remainingAmount;
     }
 
 
-    public Double getAmountFee() {
+    public BigDecimal getAmountFee() {
         return amountFee;
     }
 
 
-    public void setAmountFee(Double amountFee) {
+    public void setAmountFee(BigDecimal amountFee) {
         this.amountFee = amountFee;
     }
 
@@ -194,25 +235,6 @@ public class Sale{ // Ahora extiende PayableItem
     }
 
 
-    public Integer getDaysLate() {
-        return daysLate;
-    }
-
-
-    public void setDaysLate(Integer daysLate) {
-        this.daysLate = daysLate;
-    }
-
-
-    public boolean isCompleted() {
-        return completed;
-    }
-
-
-    public void setCompleted(boolean completed) {
-        this.completed = completed;
-    }
-
 
     public String getDescriptionProduct() {
         return descriptionProduct;
@@ -224,25 +246,72 @@ public class Sale{ // Ahora extiende PayableItem
     }
 
 
-    public Double getCost() {
+    public BigDecimal getCost() {
         return cost;
     }
 
 
-    public void setCost(Double cost) {
+    public void setCost(BigDecimal cost) {
         this.cost = cost;
     }
 
 
-    public String getProductType() {
+    public ProductType getProductType() {
         return productType;
     }
 
 
-    public void setProductType(String productType) {
+    public void setProductType(ProductType productType) {
         this.productType = productType;
     }
-    
-    
-    
+
+    public Product getProduct() {
+        return product;
+    }
+
+    public void setProduct(Product product) {
+        this.product = product;
+    }
+
+    public Integer getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(Integer quantity) {
+        this.quantity = quantity;
+    }
+
+
+    public SaleStatus getStatus() {
+        return status;
+    }
+
+
+    public void setStatus(SaleStatus status) {
+        this.status = status;
+    }
+
+    public SaleKind getKind() {
+        return kind;
+    }
+
+
+    public void setKind(SaleKind kind) {
+        this.kind = kind;
+    }
+
+    public BigDecimal getRefundAmount() {
+        return refundAmount;
+    }    public void setRefundAmount(BigDecimal refundAmount) {
+        this.refundAmount = refundAmount;
+    }
+
+    public BigDecimal getInterestRate() {
+        return interestRate;
+    }
+
+    public void setInterestRate(BigDecimal interestRate) {
+        this.interestRate = interestRate;
+    }
+
 }

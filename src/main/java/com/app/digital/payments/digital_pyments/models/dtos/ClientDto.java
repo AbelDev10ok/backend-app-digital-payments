@@ -1,21 +1,34 @@
 package com.app.digital.payments.digital_pyments.models.dtos;
 
+import java.math.BigDecimal;
+
 public class ClientDto {
     private Long id;
     private String name;
     private String telefono;
     private String email;
     private String direccion;
+    private boolean isSeller;
+    private String sellerName;
+    private String dni;
+    private BigDecimal deudaTotal;
 
     public ClientDto() {
     }
 
-    public ClientDto(Long id, String name, String telefono, String email, String direccion) {
+    public ClientDto(Long id, String name, String telefono, String email, String direccion, boolean isSeller, String sellerName, String dni) {
         this.id = id;
         this.name = name;
         this.telefono = telefono;
         this.email = email;
         this.direccion = direccion;
+        this.isSeller = isSeller;
+        this.sellerName = sellerName;
+        this.dni = dni;
+    }
+
+    public boolean isSeller() {
+        return isSeller;
     }
 
     public Long getId() {
@@ -58,5 +71,31 @@ public class ClientDto {
         this.direccion = direccion;
     }
 
-    
+    public void setSeller(boolean isSeller) {
+        this.isSeller = isSeller;
+    }
+
+    public String getSellerName() {
+        return sellerName;
+    }
+
+    public void setSellerName(String sellerName) {
+        this.sellerName = sellerName;
+    }
+
+    public String getDni() {
+        return dni;
+    }
+
+    public void setDni(String dni) {
+        this.dni = dni;
+    }
+
+    public BigDecimal getDeudaTotal() {
+        return deudaTotal;
+    }
+
+    public void setDeudaTotal(BigDecimal deudaTotal) {
+        this.deudaTotal = deudaTotal;
+    }
 }

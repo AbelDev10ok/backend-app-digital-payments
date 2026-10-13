@@ -45,14 +45,16 @@ public class JwtUtil {
         List<String> roles = getAuthoritiesFromRoles(user.getRole());
         Map<String, Object> claims = new HashMap<>();
         claims.put("authorities", new ObjectMapper().writeValueAsString(roles));
+        if (user.getBusiness() != null && user.getBusiness().getId() != null) {
+            claims.put("businessId", user.getBusiness().getId());
+        }
 
         return Jwts.builder()
                 .claims(claims)
                 .signWith(SECRET_KEY)
                 .subject(user.getEmail())
                 .issuedAt(new Date(System.currentTimeMillis()))
-                // .expiration(new Date(System.currentTimeMillis() + 1000 * 60 * 15)) // 15 minutos
-                .expiration(new Date(System.currentTimeMillis() + 1000 * 60 * 1)) // 1 minuto para pruebas
+                .expiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60)) // 1 hora
 
                 .compact();
     }
@@ -63,8 +65,7 @@ public class JwtUtil {
                 .signWith(SECRET_KEY)
                 .subject(user.getEmail())
                 .issuedAt(new Date(System.currentTimeMillis()))
-                // .expiration(new Date(System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 30)) // 30 días
-                .expiration(new Date(System.currentTimeMillis() + 1000L * 60 * 10)) // 10 minutos para pruebas
+                .expiration(new Date(System.currentTimeMillis() + 1000L * 60 * 60 * 24 )) // 1 día
                 .compact();
     }
     

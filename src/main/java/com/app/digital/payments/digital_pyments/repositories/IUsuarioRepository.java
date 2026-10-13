@@ -7,11 +7,12 @@ import org.springframework.stereotype.Repository;
 
 import com.app.digital.payments.digital_pyments.models.Usuario;
 
-@Repository
+@Repository 
 public interface IUsuarioRepository extends JpaRepository<Usuario,Long> {
     boolean existsByEmail(String email);
     Optional<Usuario> findByEmail(String email);
     boolean existsByEmailAndIdNot(String email, Long id);
     Optional<Usuario> findByEmailAndRefreshToken(String email, String refreshToken);
     Optional<Usuario> findByVerificationToken(String token);
+    Optional<Usuario> findByResetPasswordToken(String token);
 }

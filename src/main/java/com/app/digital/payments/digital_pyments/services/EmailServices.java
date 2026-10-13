@@ -1,5 +1,7 @@
 package com.app.digital.payments.digital_pyments.services;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -13,6 +15,8 @@ import jakarta.mail.internet.MimeMessage;
 
 @Service
 public class EmailServices {
+
+    private static final Logger log = LoggerFactory.getLogger(EmailServices.class);
 
     private final JavaMailSender mailSender;
 
@@ -40,7 +44,7 @@ public class EmailServices {
             helper.setText(htmlContent, true); // true para indicar que es HTML
             mailSender.send(message);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Error al enviar el correo a {}", email.getDestinatario(), e);
             throw new MessagingException("Error al enviar el correo electrónico: " + e.getMessage());
         }
 

@@ -5,9 +5,16 @@ import java.util.List;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
+@Table(name = "role", uniqueConstraints = {
+		@UniqueConstraint(name = "uk_role_name", columnNames = { "name" })
+})
 public class Role {
+
+    public static final String ROLE_USER = "ROLE_USER";
 
     @Id
     @jakarta.persistence.GeneratedValue(strategy = jakarta.persistence.GenerationType.IDENTITY)

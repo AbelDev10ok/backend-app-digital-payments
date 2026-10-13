@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -39,14 +40,27 @@ public class Usuario {
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
 
+    // Negocio (tenant) del usuario. EAGER para poder leerlo en los filtros de
+    // seguridad fuera de transacciones.
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "business_id", nullable = false)
+    private Business business;
+
     @Column(unique = true)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String refreshToken;
 
     //campos para la verificación de email 
     @Column(unique = true)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String verificationToken; // Nuevo campo para el token de verificación
     
     private LocalDateTime tokenExpiryDate; // Nuevo campo para la fecha de expiración del token
+
+    // campos para el restablecimiento de contraseña
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String resetPasswordToken; 
+    private LocalDateTime resetPasswordTokenExpiryDate;
 
 
     public Usuario() {
@@ -103,6 +117,14 @@ public class Usuario {
 
     public void setRole(Role role) {
         this.role = role;
+    }
+
+    public Business getBusiness() {
+        return business;
+    }
+
+    public void setBusiness(Business business) {
+        this.business = business;
     }
 
     
@@ -175,6 +197,22 @@ public class Usuario {
 
     public void setTokenExpiryDate(LocalDateTime tokenExpiryDate) {
         this.tokenExpiryDate = tokenExpiryDate;
+    }
+
+    public String getResetPasswordToken() {
+        return resetPasswordToken;
+    }
+
+    public void setResetPasswordToken(String resetPasswordToken) {
+        this.resetPasswordToken = resetPasswordToken;
+    }
+
+    public LocalDateTime getResetPasswordTokenExpiryDate() {
+        return resetPasswordTokenExpiryDate;
+    }
+
+    public void setResetPasswordTokenExpiryDate(LocalDateTime resetPasswordTokenExpiryDate) {
+        this.resetPasswordTokenExpiryDate = resetPasswordTokenExpiryDate;
     }
 
     

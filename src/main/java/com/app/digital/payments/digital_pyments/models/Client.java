@@ -13,9 +13,15 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+
+import org.hibernate.annotations.Filter;
 
 @Entity
-@Table(name = "client")
+@Table(name = "client", uniqueConstraints = {
+		@UniqueConstraint(name = "uk_client_business_dni", columnNames = { "business_id", "dni" })
+})
+@Filter(name = "tenantFilter", condition = "business_id = :businessId")
 public class Client {
 
     @Id
@@ -25,8 +31,15 @@ public class Client {
     private String telefono;
     private String email;
     private String direccion;
+    // El DNI es unico dentro del negocio (la unicidad global se relajo en V5)
+    private String dni;
 
-        // --- NUEVO CAMPO: Indica si este cliente es un vendedor ---
+    // Negocio (tenant) al que pertenece el cliente
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "business_id", nullable = false)
+    private Business business;
+
+    // Indica si este cliente es un vendedor ---
     @Column(name = "is_seller", nullable = false)
     private boolean isSeller = false;
 
@@ -94,6 +107,45 @@ public class Client {
     }
 
     
+    public boolean isSeller() {
+        return isSeller;
+    }
+
+    public void setSeller(boolean isSeller) {
+        this.isSeller = isSeller;
+    }
+
+    public Client getSeller() {
+        return seller;
+    }
+
+    public void setSeller(Client seller) {
+        this.seller = seller;
+    }
+
+    public List<Client> getManagedClients() {
+        return managedClients;
+    }
+
+    public void setManagedClients(List<Client> managedClients) {
+        this.managedClients = managedClients;
+    }
+
+    public String getDni() {
+        return dni;
+    }
+
+    public void setDni(String dni) {
+        this.dni = dni;
+    }
+
+    public Business getBusiness() {
+        return business;
+    }
+
+    public void setBusiness(Business business) {
+        this.business = business;
+    }
 
     @Override
     public int hashCode() {
@@ -104,7 +156,7 @@ public class Client {
         result = prime * result + ((telefono == null) ? 0 : telefono.hashCode());
         result = prime * result + ((email == null) ? 0 : email.hashCode());
         result = prime * result + ((direccion == null) ? 0 : direccion.hashCode());
-        result = prime * result + ((sales == null) ? 0 : sales.hashCode());
+        result = prime * result + ((dni == null) ? 0 : dni.hashCode());
         return result;
     }
 
@@ -142,36 +194,12 @@ public class Client {
                 return false;
         } else if (!direccion.equals(other.direccion))
             return false;
-        if (sales == null) {
-            if (other.sales != null)
+        if (dni == null) {
+            if (other.dni != null)
                 return false;
-        } else if (!sales.equals(other.sales))
+        } else if (!dni.equals(other.dni))
             return false;
         return true;
-    }
-
-    public boolean isSeller() {
-        return isSeller;
-    }
-
-    public void setSeller(boolean isSeller) {
-        this.isSeller = isSeller;
-    }
-
-    public Client getSeller() {
-        return seller;
-    }
-
-    public void setSeller(Client seller) {
-        this.seller = seller;
-    }
-
-    public List<Client> getManagedClients() {
-        return managedClients;
-    }
-
-    public void setManagedClients(List<Client> managedClients) {
-        this.managedClients = managedClients;
     }
 
     

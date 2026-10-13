@@ -1,13 +1,16 @@
 package com.app.digital.payments.digital_pyments.mappers;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import com.app.digital.payments.digital_pyments.models.Fee;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientDto;
-import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
+import com.app.digital.payments.digital_pyments.models.dtos.ProductDto;
+import com.app.digital.payments.digital_pyments.models.dtos.ProductTypeDto;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleResponseDto;
 
 import static com.app.digital.payments.digital_pyments.mappers.FeeMapper.convertToFeeDto;
@@ -22,8 +25,10 @@ public class SaleMapper {
             sale.getClient().getName(),
             sale.getClient().getTelefono(),
             sale.getClient().getEmail(),
-            sale.getClient().getDireccion()
-        );
+            sale.getClient().getDireccion(),
+            sale.getClient().isSeller(),
+            sale.getClient().getSeller() != null ? sale.getClient().getSeller().getName() : null,
+            sale.getClient().getDni()        );
 
         SaleResponseDto dto = new SaleResponseDto();
         dto.setId(sale.getId());
@@ -33,15 +38,42 @@ public class SaleMapper {
         dto.setDateSale(sale.getDateCreation());
         dto.setFinalPaymentDate(sale.getFinalPaymentDate());
         dto.setTypePayments(sale.getTypePayments());
-        dto.setDaysLate(sale.getDaysLate());
         dto.setQuantityFees(sale.getQuiantityFees());
-        dto.setAmountFe(sale.getAmountFee());
-        dto.setCompleted(sale.isCompleted());
+        dto.setAmountFee(sale.getAmountFee());
+        // dto.setCompleted(sale.isCompleted());
         dto.setCost(sale.getCost()); // Agregar costo del producto/servicio
+        dto.setInterestRate(sale.getInterestRate());
         dto.setQuantityFees(sale.getQuiantityFees());
         // dto.setAdditionalFees(sale.getAdditionalFees());
         dto.setTotalFees(sale.getFees().size());
         dto.setRemainingAmount(sale.getRemainingAmount());
+        dto.setStatus(sale.getStatus().name());
+        dto.setRealFinalPayment(sale.getRealFinalDate());
+        dto.setKind(sale.getKind());
+        dto.setQuantity(sale.getQuantity());
+
+
+                // Aquí está el cambio principal
+        if (sale.getProductType() != null) {
+            ProductTypeDto productTypeDto = new ProductTypeDto(
+                sale.getProductType().getId(),
+                sale.getProductType().getName()
+                // sale.getProductType().getDescription()
+            );
+            dto.setProductType(productTypeDto);
+        }
+
+        if (sale.getProduct() != null) {
+            ProductDto productDto = new ProductDto(
+                sale.getProduct().getId(),
+                sale.getProduct().getName(),
+                sale.getProduct().getPrice(),
+                sale.getProduct().getStock(),
+                sale.getProduct().getProductType() != null ? sale.getProduct().getProductType().getId() : null,
+                sale.getProduct().getProductType() != null ? sale.getProduct().getProductType().getName() : null
+            );
+            dto.setProduct(productDto);
+        }
 
 
         dto.setFees(sale.getFees().stream()
@@ -49,20 +81,22 @@ public class SaleMapper {
             .map(fee -> convertToFeeDto(fee))
             .collect(Collectors.toList()));
 
-        // Separar cuotas normales de adicionales (opcional, puedes ajustar si quieres solo relevantes)
-        // List<FeeDto> additionalFees = sale.getFees().stream()
-        //     .filter(Fee::isAdditional)
-        //     .map(fee -> convertToFeeDto(fee))
-        //     .collect(Collectors.toList());
-
-        // dto.setAdditionalFees(sale.getAdditionalFees());
-        // dto.setAdditionalFeesList(additionalFees);
-
         // Calcular cuotas pagadas
         long paidFeesCount = sale.getFees().stream()
             .filter(Fee::getPaid)
             .count();
         dto.setPaidFeesCount((int) paidFeesCount);
+
+        // Monto ya cobrado antes de la anulación (suma de cuotas pagadas)
+        BigDecimal collectedAmount = sale.getFees().stream()
+            .filter(Fee::getPaid)
+            .map(Fee::getAmount)
+            .filter(Objects::nonNull)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        dto.setCollectedAmount(collectedAmount);
+
+        // Lo devuelto al cliente al anular (0 si el monto cobrado se retiene)
+        dto.setRefundAmount(sale.getRefundAmount() != null ? sale.getRefundAmount() : BigDecimal.ZERO);
 
         return dto;
     }

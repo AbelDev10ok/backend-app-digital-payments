@@ -1,8 +1,5 @@
 package com.app.digital.payments.digital_pyments.configuration.security;
 
-import java.util.Arrays;
-
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,28 +13,38 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.app.digital.payments.digital_pyments.configuration.security.filter.JwtAutenticacionFilter;
 import com.app.digital.payments.digital_pyments.configuration.security.filter.JwtValidationFilter;
+import com.app.digital.payments.digital_pyments.configuration.security.filter.PaymentGateFilter;
+import com.app.digital.payments.digital_pyments.configuration.security.filter.RateLimitFilter;
+import com.app.digital.payments.digital_pyments.configuration.security.filter.SecurityHeadersFilter;
 import com.app.digital.payments.digital_pyments.repositories.IUsuarioRepository;
 
-import org.springframework.web.filter.CorsFilter;
+import com.app.digital.payments.digital_pyments.configuration.security.filter.CorsFilter;
 
 @Configuration
 @EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
-    @Autowired
-    private IUsuarioRepository userRepository; // Inject the repository into SecurityConfig
+    private final IUsuarioRepository userRepository;
+    private final JwtUtil jwtUtil;
+    private final AuthenticationConfiguration authenticationConfiguration;
+    private final RateLimitFilter rateLimitFilter;
+    private final SecurityHeadersFilter securityHeadersFilter;
+    private final PaymentGateFilter paymentGateFilter;
 
-    @Autowired
-    private JwtUtil jwtUtil; // Inject the JwtUtil for JWT operations
-
-    @Autowired
-    private AuthenticationConfiguration authenticationConfiguration;
+    public SecurityConfig(IUsuarioRepository userRepository, JwtUtil jwtUtil,
+            AuthenticationConfiguration authenticationConfiguration, RateLimitFilter rateLimitFilter,
+            SecurityHeadersFilter securityHeadersFilter,
+            PaymentGateFilter paymentGateFilter) {
+        this.userRepository = userRepository;
+        this.jwtUtil = jwtUtil;
+        this.authenticationConfiguration = authenticationConfiguration;
+        this.rateLimitFilter = rateLimitFilter;
+        this.securityHeadersFilter = securityHeadersFilter;
+        this.paymentGateFilter = paymentGateFilter;
+    }
 
     @Bean
     AuthenticationManager authenticationManager() throws Exception{
@@ -56,37 +63,29 @@ public class SecurityConfig {
         return http.authorizeHttpRequests((auth) -> auth
                 .requestMatchers(HttpMethod.POST ,"/auth/*").permitAll()
                 .requestMatchers(HttpMethod.GET ,"/auth/*").permitAll()
-                .requestMatchers(HttpMethod.POST ,"/auth/refresh-token").permitAll() // Permitir acceso al endpoint de refresh token
-                .requestMatchers(HttpMethod.POST ,"/email/send").permitAll()
+                .requestMatchers(HttpMethod.POST ,"/auth/refresh-token").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/webhooks/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/webhooks/**").permitAll()
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/swagger-resources/**").permitAll()
 
-
-                
                 .anyRequest().authenticated())
+                .addFilterBefore(rateLimitFilter, JwtAutenticacionFilter.class)
+                .addFilterBefore(securityHeadersFilter, RateLimitFilter.class)
                 .addFilter(new JwtAutenticacionFilter(authenticationManager(), userRepository, jwtUtil))
-                .addFilter(new JwtValidationFilter(authenticationManager(),userRepository))
+                .addFilter(new JwtValidationFilter(authenticationManager(), userRepository))
+                .addFilterAfter(paymentGateFilter, JwtValidationFilter.class)
                 .csrf(config -> config.disable())
-                .cors(cors->cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(manager -> manager.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .build();
     }
 
     @Bean
-    CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:5173"));
-        configuration.setAllowedMethods(Arrays.asList("GET","POST","PUT","DELETE"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization","Content-Type"));
-        configuration.setAllowCredentials(true);
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        
-        return source;
-    }
-
-    @Bean
-    FilterRegistrationBean<CorsFilter> corsFilter() {
-        FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(new CorsFilter(corsConfigurationSource()));
+    public FilterRegistrationBean<CorsFilter> corsFilterRegistration(CorsFilter corsFilter) {
+        FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(corsFilter);
         bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return bean;
     }
+
+
+
 }

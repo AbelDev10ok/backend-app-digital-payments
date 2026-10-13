@@ -1,10 +1,12 @@
 package com.app.digital.payments.digital_pyments.services;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
-// import java.time.temporal.ChronoUnit;
-// import java.util.Comparator;
 import java.util.List;
-import org.springframework.beans.factory.annotation.Autowired;
+import java.util.Objects;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,7 +15,11 @@ import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
-import com.app.digital.payments.digital_pyments.utils.Payments;
+import com.app.digital.payments.digital_pyments.services.iservices.IFeeServices;
+import com.app.digital.payments.digital_pyments.utils.FeeScheduleCalculator;
+import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
+import com.app.digital.payments.digital_pyments.utils.SaleStatus;
+import com.app.digital.payments.digital_pyments.utils.TenantGuard;
 
 import jakarta.persistence.EntityNotFoundException;
 
@@ -22,132 +28,238 @@ import static com.app.digital.payments.digital_pyments.mappers.FeeMapper.convert
 @Service
 public class FeeServices implements IFeeServices {
 
-    @Autowired
-    private IFeeRepository feeRepository;
+    private static final Logger log = LoggerFactory.getLogger(FeeServices.class);
 
-    @Autowired
-    private IVentaServices saleService;
+    private final IFeeRepository feeRepository;
 
-    @Autowired
-    private ISaleRepository saleRepository;
+    private final ISaleRepository saleRepository;
+
+    FeeServices(IFeeRepository feeRepository, ISaleRepository saleRepository) {
+        this.feeRepository = feeRepository;
+        this.saleRepository = saleRepository;
+    }
+
+    @Override
+    @Transactional
+    public void deleteFee(Long feeId) {
+        Fee fee = getFeeById(feeId);
+        Sale sale = fee.getSale();
+
+        if (sale.getFees().size() == 1 && sale.getFees().contains(fee)) {
+            throw new IllegalArgumentException("No se puede eliminar la única cuota de una venta. Elimine la venta completa si es necesario.");
+        }
+
+        BigDecimal feeAmount = fee.getAmount() != null ? fee.getAmount() : BigDecimal.ZERO;
+        if (Boolean.TRUE.equals(fee.getPaid())) {
+            sale.setRemainingAmount(sale.getRemainingAmount().add(feeAmount));
+        }
+
+        if (sale.getStatus() == SaleStatus.COMPLETED
+                && sale.getFees().stream().filter(f -> !f.getPaid() && !f.getId().equals(feeId)).count() == 0) {
+            sale.setStatus(SaleStatus.ACTIVE);
+            sale.setRealFinalDate(null);
+        }
+
+        int nextFeeNumber = sale.getFees().stream().mapToInt(Fee::getNumberFee).max().orElse(0) + 1;
+
+        sale.getFees().remove(fee);
+        feeRepository.delete(fee);
+
+        boolean hasUnpaidFees = sale.getFees().stream().anyMatch(f -> !f.getPaid());
+        if (Boolean.TRUE.equals(fee.getPaid()) && sale.getRemainingAmount().signum() > 0 && !hasUnpaidFees) {
+            Fee nextFee = new Fee();
+            nextFee.setSale(sale);
+            nextFee.setNumberFee(nextFeeNumber);
+            nextFee.setBusiness(sale.getBusiness());
+
+            Fee lastPaidFee = sale.getFees().stream()
+                    .filter(Fee::getPaid)
+                    .filter(f -> f.getExpirationDate() != null)
+                    .max((f1, f2) -> f1.getExpirationDate().compareTo(f2.getExpirationDate()))
+                    .orElse(null);
+
+            if (lastPaidFee == null) {
+                throw new IllegalStateException("No hay una cuota pagada para calcular la siguiente cuota");
+            }
+            nextFee.setExpirationDate(FeeScheduleCalculator.nextExpirationDate(lastPaidFee.getExpirationDate(), sale.getTypePayments()));
+            nextFee.setAmount(sale.getAmountFee());
+
+            sale.getFees().add(nextFee);
+            feeRepository.save(nextFee);
+        } else if (sale.getRemainingAmount().signum() <= 0 && sale.getStatus() != SaleStatus.COMPLETED) {
+            sale.setStatus(SaleStatus.COMPLETED);
+            sale.setRealFinalDate(LocalDate.now());
+        }
+    }
 
     // metodos de registro de pago de cuota
     @Override
     @Transactional
-    public FeeDto registerPayment(Long feeId, Double amount) {
+    public FeeDto registerPayment(Long feeId, BigDecimal amount, LocalDate date, String paymentMethod) {
         Fee fee = getFeeById(feeId);
-        
-        if (fee.getPaid()) {
+        Sale sale = fee.getSale();
+
+        if (paymentMethod == null || paymentMethod.isBlank()) {
+            throw new IllegalArgumentException("El método de pago es obligatorio");
+        }
+        PaymentMethod pm;
+        try {
+            pm = PaymentMethod.valueOf(paymentMethod.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Método de pago inválido: " + paymentMethod + ". Use EFECTIVO o TRANSFERENCIA");
+        }
+
+        if (date != null && date.isBefore(sale.getDateCreation())) {
+            throw new IllegalArgumentException("La fecha de pago no puede ser anterior a la fecha de creación de la venta");
+        }
+
+        List<Fee> paidFees = feeRepository.findBySaleId(sale.getId());
+        for (Fee paidFee : paidFees) {
+            if (Boolean.TRUE.equals(paidFee.getPaid()) && paidFee.getDatePayment() != null) {
+                if (date != null && paidFee.getDatePayment().isEqual(date)) {
+                    throw new IllegalArgumentException("Ya existe un pago registrado para la fecha: " + date);
+                }
+            }
+        }
+
+        if (Boolean.TRUE.equals(fee.getPaid())) {
             throw new IllegalStateException("La cuota ya está pagada");
         }
 
-        
-        Sale payableItem = fee.getSale();
-
-
-        // if(amount > sale.getRemainingAmount()) {
-        //     throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
-        // }
-
-        if (amount <= 0) {
+        if (amount == null || amount.signum() <= 0) {
             throw new IllegalArgumentException("El monto del pago debe ser mayor a cero");
         }
 
-        payableItem.deductFromRemainingAmount(amount);
+        // Evitar sobrepago: el monto no puede superar el saldo restante de la venta
+        if (amount.compareTo(sale.getRemainingAmount()) > 0) {
+            throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
+        }
+
+        sale.deductFromRemainingAmount(amount);
 
         fee.setPaid(true);
         fee.setAmount(amount);
-        fee.setDatePayment(LocalDate.now());
+        fee.setDatePayment(date);
+        fee.setPaymentMethod(pm);
+        feeRepository.save(fee);
 
-        // marcar venta como completada si el monto restante es cero o negativo
-        if (payableItem.getRemainingAmount() <= 0) {
-            payableItem.setCompleted(true);
-            payableItem.setRemainingAmount(0.0); // Asegurarse de que el monto restante sea cero
+        if (sale.getRemainingAmount().signum() <= 0) {
+            sale.setStatus(SaleStatus.COMPLETED);
+            sale.setRemainingAmount(BigDecimal.ZERO);
+            sale.setRealFinalDate(date != null ? date : LocalDate.now());
         }
 
-
-        // Generar la proxima cuota si quedan cuotas por pendientes
-        if (payableItem.getRemainingAmount() > 0) {
-
-
+        if (sale.getRemainingAmount().signum() > 0) {
             Fee nextFee = new Fee();
-            nextFee.setSale(payableItem);
+            nextFee.setSale(sale);
             nextFee.setNumberFee(fee.getNumberFee() + 1);
-            if(payableItem.getTypePayments() == Payments.MENSUAL) {
-                nextFee.setExpirationDate(fee.getExpirationDate().plusMonths(1));
-            }
-            else if(payableItem.getTypePayments() == Payments.QUINCENAL) {
-                nextFee.setExpirationDate(fee.getExpirationDate().plusDays(15));
-            }
-            else if(payableItem.getTypePayments() == Payments.SEMANAL) {
-                nextFee.setExpirationDate(fee.getExpirationDate().plusWeeks(1));
-            } else {
-                throw new IllegalArgumentException("Tipo de pago no soportado: " + payableItem.getTypePayments()); 
-            }
-
-            // agregar logica para manejar cuotas adicionales en caso de que el numero de cuotas originales se haya completado
-            //  y tengamos que generar una nueva cuota aumentar el numero de cuotas adicionales que tenemos en la venta
-            // if (payableItem.getQuiantityFees() <= payableItem.getFees().size()) {
-            //     // Si ya se han pagado todas las cuotas originales, incrementamos las cuotas adicionales
-            //     payableItem.setAdditionalFees(payableItem.getAdditionalFees() + 1);
-            //     nextFee.setAdditional(true); 
-            // }else{
-
-            //     nextFee.setAdditional(false);
-            // }
-            payableItem.getFees().add(nextFee);
+            nextFee.setExpirationDate(FeeScheduleCalculator.nextExpirationDate(fee.getExpirationDate(), sale.getTypePayments()));
+            nextFee.setAmount(sale.getAmountFee());
+            nextFee.setPaid(false);
+            nextFee.setBusiness(sale.getBusiness());
+            sale.getFees().add(nextFee);
             feeRepository.save(nextFee);
         }
-            Sale sale = (Sale) payableItem;
-            sale.setFinalPaymentDate(fee.getExpirationDate());
-            sale.setRealFinalDate(LocalDate.now());
-            saleRepository.save(sale);
 
-        Fee savedFee = feeRepository.save(fee);
-        updateRelatedSaleStatus(fee.getSale().getId());
-        
-        return  convertToFeeDto(savedFee);
+        saleRepository.save(sale);
+
+        return convertToFeeDto(fee);
     }
 
-    // metodo para cambiar fecha de pago de una cuota
+    // metodo para actualizar pago
     @Override
     @Transactional
-    public FeeDto postponeFee(Long feeId, LocalDate newDate) {
+    public FeeDto postponeFee(Long feeId, LocalDate newDataExpiration, LocalDate newDatePayment, BigDecimal amount) {
+
         Fee fee = getFeeById(feeId);
-        
-        if (fee.getPaid()) {
-            throw new IllegalStateException("No se puede posponer una cuota pagada");
+        Sale sale = fee.getSale();
+
+        if (newDataExpiration != null && !Objects.equals(newDataExpiration, fee.getExpirationDate())) {
+            if (newDataExpiration.isBefore(sale.getDateCreation())) {
+                throw new IllegalArgumentException("La fecha no puede ser anterior a la creación");
+            }
+            if (sale.getFees().stream().anyMatch(f -> f.getExpirationDate().equals(newDataExpiration))) {
+                throw new IllegalArgumentException("Ya existe una cuota con esa fecha de expiración en esta venta");
+            }
+            fee.setExpirationDate(newDataExpiration);
+            feeRepository.save(fee);
+            return convertToFeeDto(fee);
         }
 
-        if (newDate.isBefore(LocalDate.now())) {
-            throw new IllegalArgumentException("La nueva fecha de vencimiento no puede ser anterior a la fecha actual");
+        if (newDatePayment != null && !Objects.equals(newDatePayment, fee.getDatePayment())) {
+            if (newDatePayment.isBefore(sale.getDateCreation())) {
+                throw new IllegalArgumentException("La fecha no puede ser anterior a la creación");
+            }
+            fee.setDatePayment(newDatePayment);
         }
-        
-        fee.setExpirationDate(newDate);
-        updateRelatedSaleStatus(fee.getSale().getId());
-        
-        return convertToFeeDto(feeRepository.save(fee));
-    }
-    // método para actualizar el estado de la venta relacionada
-    private void updateRelatedSaleStatus(Long saleId) {
-        saleService.updateSaleGlobalDelay(saleId);
-    }
 
+        BigDecimal oldAmount = fee.getAmount() != null ? fee.getAmount() : BigDecimal.ZERO;
+        BigDecimal currentRemaining = sale.getRemainingAmount() != null ? sale.getRemainingAmount() : BigDecimal.ZERO;
+
+        if (amount != null) {
+            BigDecimal difference = oldAmount.subtract(amount);
+            sale.setRemainingAmount(currentRemaining.add(difference));
+            fee.setAmount(amount);
+
+            if (amount.signum() == 0) {
+                fee.setPaid(false);
+                fee.setDatePayment(null);
+            }
+        }
+
+        if (sale.getRemainingAmount().signum() < 0) {
+            throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
+        }
+
+        if (sale.getRemainingAmount().signum() > 0) {
+            boolean hasUnpaidFees = sale.getFees().stream().anyMatch(f -> !f.getPaid());
+            if (!hasUnpaidFees) {
+                Fee lastPaidFee = sale.getFees().stream()
+                        .filter(Fee::getPaid)
+                        .filter(f -> f.getExpirationDate() != null)
+                        .max((f1, f2) -> f1.getExpirationDate().compareTo(f2.getExpirationDate()))
+                        .orElse(null);
+
+                if (lastPaidFee != null) {
+                    Fee nextFee = new Fee();
+                    nextFee.setSale(sale);
+                    nextFee.setNumberFee(lastPaidFee.getNumberFee() + 1);
+                    nextFee.setExpirationDate(FeeScheduleCalculator.nextExpirationDate(lastPaidFee.getExpirationDate(), sale.getTypePayments()));
+                    nextFee.setPaid(false);
+                    nextFee.setAmount(sale.getAmountFee());
+                    nextFee.setBusiness(sale.getBusiness());
+                    sale.getFees().add(nextFee);
+                    feeRepository.save(nextFee);
+                }
+            }
+            sale.setStatus(SaleStatus.ACTIVE);
+        } else {
+            feeRepository.save(fee);
+            sale.setStatus(SaleStatus.COMPLETED);
+        }
+
+        saleRepository.save(sale);
+
+        return convertToFeeDto(fee);
+    }
 
     @Override
     @Transactional
     public Fee getFeeById(Long feeId) {
-        return feeRepository.findById(feeId)
-            .orElseThrow(() -> new EntityNotFoundException("Cuota no encontrada con ID: " + feeId));
+        Fee fee = feeRepository.findById(feeId)
+                .orElseThrow(() -> new EntityNotFoundException("Cuota no encontrada con ID: " + feeId));
+        // La cuota (via su venta) tiene que pertenecer al negocio autenticado
+        TenantGuard.verificar(fee.getBusiness() != null ? fee.getBusiness().getId() : null);
+        return fee;
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<FeeDto> getFeeBySaleId(Long feeId) {
-        List<Fee> fees = feeRepository.findBySaleId(feeId);        
+        List<Fee> fees = feeRepository.findBySaleId(feeId);
         return fees.stream()
-        .map(fee-> convertToFeeDto(fee))
-        .toList();
+                .map(fee -> convertToFeeDto(fee))
+                .toList();
     }
-    
+
 }

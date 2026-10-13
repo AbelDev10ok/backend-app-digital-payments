@@ -1,48 +1,22 @@
 package com.app.digital.payments.digital_pyments.models.dtos;
 
-import java.time.LocalDate;
-import java.util.List;
-
 import com.app.digital.payments.digital_pyments.utils.IValueOfEnum;
-import com.app.digital.payments.digital_pyments.utils.Payments;
+import com.app.digital.payments.digital_pyments.utils.SaleKind;
 
 import io.micrometer.common.lang.NonNull;
-import jakarta.persistence.Column;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 public class SaleUpdateRequestDto {    @NonNull
 
-    private Long clientId;
-    @NotBlank(message = "La descripción del producto no puede estar vacía")
     private String descriptionProduct;
 
-    // El precio debe ser mayor a 0
-    @NotNull(message = "El precio total no puede estar vacío")
-    @Min(value = 1, message = "El precio total debe ser mayor a 0")
-    private Double priceTotal;
-    
-    // El tipo de pago debe ser uno de los valores definidos en Payments
-    @IValueOfEnum(enumClass = Payments.class, message = "El tipo de pago debe ser SEMANAL, QUINCENAL o MENSUAL")
-    private String payments;
+    // Categoría de producto (solo obligatoria para VENTA)
+    private Long productType;
 
-    @Min(value = 1, message = "La cantidad de cuotas debe ser mayor a 0")
-    private Integer quantityFees;
+    // Producto del catálogo (opcional, solo VENTA)
+    private Long product;
 
-    @NotNull(message = "El valor de la cuota no puede estar vacío")
-    private Double amountFee;
-
-    @NotNull(message = "El costo no puede estar vacío")
-    private Double cost; // Costo del producto/servicio
-
-    public Long getClientId() {
-        return clientId;
-    }
-
-    public void setClientId(Long clientId) {
-        this.clientId = clientId;
-    }
+    @IValueOfEnum(enumClass = SaleKind.class, message = "El tipo de transacción debe ser VENTA o PRESTAMO")
+    private String kind;
 
     public String getDescriptionProduct() {
         return descriptionProduct;
@@ -52,44 +26,28 @@ public class SaleUpdateRequestDto {    @NonNull
         this.descriptionProduct = descriptionProduct;
     }
 
-    public Double getPriceTotal() {
-        return priceTotal;
+    public Long getProductType() {
+        return productType;
     }
 
-    public void setPriceTotal(Double priceTotal) {
-        this.priceTotal = priceTotal;
+    public void setProductType(Long productType) {
+        this.productType = productType;
     }
 
-    public String getPayments() {
-        return payments;
+    public Long getProduct() {
+        return product;
     }
 
-    public void setPayments(String payments) {
-        this.payments = payments;
+    public void setProduct(Long product) {
+        this.product = product;
     }
 
-    public Integer getQuantityFees() {
-        return quantityFees;
+    public String getKind() {
+        return kind;
     }
 
-    public void setQuantityFees(Integer quantityFees) {
-        this.quantityFees = quantityFees;
-    }
-
-    public Double getAmountFee() {
-        return amountFee;
-    }
-
-    public void setAmountFee(Double amountFee) {
-        this.amountFee = amountFee;
-    }
-
-    public Double getCost() {
-        return cost;
-    }
-
-    public void setCost(Double cost) {
-        this.cost = cost;
+    public void setKind(String kind) {
+        this.kind = kind;
     }
 
     
