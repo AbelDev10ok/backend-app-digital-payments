@@ -73,6 +73,24 @@ public interface IClientRepository extends JpaRepository<Client, Long>, JpaSpeci
     BigDecimal sumPriceTotalByClientIdAndLoansCompleted(@Param("clientId") Long clientId,
             @Param("status") SaleStatus status, @Param("kind") SaleKind kind);
 
+    // --- Versiones agrupadas por moneda (nunca se suman monedas distintas) ---
+
+    @Query("SELECT s.currency, SUM(s.remainingAmount) FROM Sale s WHERE s.client.Id = :clientId AND s.status <> :status AND s.kind <> :kind GROUP BY s.currency")
+    List<Object[]> sumRemainingAmountByClientIdAndSalesNotCompletedGrouped(@Param("clientId") Long clientId,
+            @Param("status") SaleStatus status, @Param("kind") SaleKind kind);
+
+    @Query("SELECT s.currency, SUM(s.priceTotal) FROM Sale s WHERE s.client.Id = :clientId AND s.status = :status AND s.kind <> :kind GROUP BY s.currency")
+    List<Object[]> sumPriceTotalByClientIdAndSalesCompletedGrouped(@Param("clientId") Long clientId,
+            @Param("status") SaleStatus status, @Param("kind") SaleKind kind);
+
+    @Query("SELECT s.currency, SUM(s.remainingAmount) FROM Sale s WHERE s.client.Id = :clientId AND s.status <> :status AND s.kind = :kind GROUP BY s.currency")
+    List<Object[]> sumRemainingAmountByClientIdAndLoansNotCompletedGrouped(@Param("clientId") Long clientId,
+            @Param("status") SaleStatus status, @Param("kind") SaleKind kind);
+
+    @Query("SELECT s.currency, SUM(s.priceTotal) FROM Sale s WHERE s.client.Id = :clientId AND s.status = :status AND s.kind = :kind GROUP BY s.currency")
+    List<Object[]> sumPriceTotalByClientIdAndLoansCompletedGrouped(@Param("clientId") Long clientId,
+            @Param("status") SaleStatus status, @Param("kind") SaleKind kind);
+
     // cuenta cuantos clientes estan asignado a este vendedor
     @Query("SELECT COUNT(c) FROM Client c WHERE c.seller.id = :sellerId")
     long countBySellerId(Long sellerId);
@@ -92,7 +110,9 @@ public interface IClientRepository extends JpaRepository<Client, Long>, JpaSpeci
 
     Optional<Client> findByDni(String dni);
 
-    Optional<Client> findByName(String name);
+    // Nombres repetidos dentro del negocio (el nombre ya no se guarda en minúsculas,
+    // así que la comparación es por IgnoreCase)
+    List<Client> findByBusinessIdAndNameIgnoreCase(Long businessId, String name);
 
     Optional<Client> findByEmail(String email);
 
@@ -108,11 +128,22 @@ public interface IClientRepository extends JpaRepository<Client, Long>, JpaSpeci
     @Query("SELECT s.client.id, SUM(s.remainingAmount) FROM Sale s WHERE s.client.id IN :clientIds AND s.status = :status GROUP BY s.client.id")
     List<Object[]> sumRemainingAmountByClientIds(@Param("clientIds") List<Long> clientIds, @Param("status") SaleStatus status);
 
-    // Total cobrado de cuotas pagadas (VENTA, excluyendo PRESTAMO)
-    @Query("SELECT SUM(f.amount) FROM Sale s JOIN s.fees f WHERE s.client.id = :clientId AND f.paid = TRUE AND s.kind <> :kind")
+    // Deuda por cliente agrupada por moneda (nunca se suman monedas distintas)
+    @Query("SELECT s.client.id, s.currency, SUM(s.remainingAmount) FROM Sale s WHERE s.client.id IN :clientIds AND s.status = :status GROUP BY s.client.id, s.currency")
+    List<Object[]> sumRemainingAmountByClientIdsGrouped(@Param("clientIds") List<Long> clientIds, @Param("status") SaleStatus status);
+
+    // Total cobrado (log de pagos) (VENTA, excluyendo PRESTAMO)
+    @Query("SELECT SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s WHERE s.client.id = :clientId AND s.kind <> :kind")
     BigDecimal sumCollectedAmountByClientIdExcludingKind(@Param("clientId") Long clientId, @Param("kind") SaleKind kind);
 
-    // Total cobrado de cuotas pagadas (PRESTAMO)
-    @Query("SELECT SUM(f.amount) FROM Sale s JOIN s.fees f WHERE s.client.id = :clientId AND f.paid = TRUE AND s.kind = :kind")
+    // Total cobrado (log de pagos) (PRESTAMO)
+    @Query("SELECT SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s WHERE s.client.id = :clientId AND s.kind = :kind")
     BigDecimal sumCollectedAmountByClientIdByKind(@Param("clientId") Long clientId, @Param("kind") SaleKind kind);
+
+    // Versiones agrupadas por moneda (nunca se suman monedas distintas)
+    @Query("SELECT s.currency, SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s WHERE s.client.id = :clientId AND s.kind <> :kind GROUP BY s.currency")
+    List<Object[]> sumCollectedAmountByClientIdExcludingKindGrouped(@Param("clientId") Long clientId, @Param("kind") SaleKind kind);
+
+    @Query("SELECT s.currency, SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s WHERE s.client.id = :clientId AND s.kind = :kind GROUP BY s.currency")
+    List<Object[]> sumCollectedAmountByClientIdByKindGrouped(@Param("clientId") Long clientId, @Param("kind") SaleKind kind);
 }

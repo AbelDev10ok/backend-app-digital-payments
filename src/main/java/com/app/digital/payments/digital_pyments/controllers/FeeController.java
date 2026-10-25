@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.CuotaListItemDto;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
+import com.app.digital.payments.digital_pyments.models.dtos.PaymentDto;
 import com.app.digital.payments.digital_pyments.services.FeeQueryServices;
 import com.app.digital.payments.digital_pyments.services.iservices.IFeeServices;
 import com.app.digital.payments.digital_pyments.utils.ApiResponse;
@@ -75,6 +76,15 @@ public class FeeController {
     public ResponseEntity<List<FeeDto>> getFeesBySale(
             @PathVariable Long saleId) {
         return ResponseEntity.ok(feeServices.getFeeBySaleId(saleId));
+    }
+
+    /**
+     * Historial de cobros de una cuota (con fecha y hora de cada pago).
+     */
+    @GetMapping("/fee/{feeId}/payments")
+    public ResponseEntity<List<PaymentDto>> getPaymentsByFee(
+            @PathVariable Long feeId) {
+        return ResponseEntity.ok(feeServices.getPaymentsByFeeId(feeId));
     }
 
     @PostMapping("/fee/{feeId}/postpone")

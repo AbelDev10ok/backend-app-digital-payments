@@ -2,7 +2,11 @@ package com.app.digital.payments.digital_pyments.models;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -13,6 +17,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 import org.hibernate.annotations.Filter;
@@ -20,7 +25,7 @@ import org.hibernate.annotations.Filter;
 import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
 
 @Entity
-@Table  (name = "fee")
+@Table(name = "fee")
 @Filter(name = "tenantFilter", condition = "business_id = :businessId")
 public class Fee {
     @Id
@@ -35,27 +40,38 @@ public class Fee {
     @ManyToOne(fetch = FetchType.LAZY)
     private Sale sale; // ¡CAMBIO AQUÍ! Ahora apunta a la clase base
 
-    
     @Column(nullable = false)
     private Integer numberFee;
-    
+
+    // Monto programado de la cuota: nunca se sobrescribe al cobrar (el cobro va al log)
+    @Column(precision = 12, scale = 2)
     private BigDecimal amount;
-    
+
+    // Acumulado cobrado de esta cuota: la suma de sus pagos. Es un cache para
+    // saber si esta cubierta y sumar deuda sin traer la coleccion de pagos;
+    // el log sigue siendo la fuente de verdad del dinero.
+    // El default 0 permite agregar la columna sin reventar las filas existentes.
+    @Column(name = "paid_amount", columnDefinition = "numeric(12,2) default 0 not null")
+    private BigDecimal paidAmount = BigDecimal.ZERO;
+
     @Column(nullable = false)
     private LocalDate expirationDate;
 
     @Column(nullable = false)
     private Boolean paid = false;
 
-    // @Column(nullable = false)
-    // private boolean additional = false; 
-    
-    private LocalDate datePayment;
-    
+    // Cache de lectura: fecha y hora del último cobro (para mostrar el horario
+    // en los listados sin traer toda la coleccion de pagos).
+    @Column(name = "last_payment_at")
+    private LocalDateTime lastPaymentAt;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "payment_method", nullable = true)
+    @Column(name = "payment_method")
     private PaymentMethod paymentMethod;
-    
+
+    // El log de cobros de la cuota (parciales y varios por día)
+    @OneToMany(mappedBy = "fee", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Payment> payments = new ArrayList<>();
 
     public Fee() {
     }
@@ -67,7 +83,6 @@ public class Fee {
         this.expirationDate = expirationDate;
     }
 
-    
     public Long getId() {
         return id;
     }
@@ -108,6 +123,23 @@ public class Fee {
         this.amount = amount;
     }
 
+    public BigDecimal getPaidAmount() {
+        if (paidAmount != null && paidAmount.signum() > 0) {
+            return paidAmount;
+        }
+        // Cuotas cobradas antes del log de pagos: en el modelo viejo el monto de la
+        // cuota era lo efectivamente cobrado, así que se usa como respaldo para no
+        // contarlas como "cobrado 0".
+        if (Boolean.TRUE.equals(paid) && amount != null && amount.signum() > 0) {
+            return amount;
+        }
+        return paidAmount != null ? paidAmount : BigDecimal.ZERO;
+    }
+
+    public void setPaidAmount(BigDecimal paidAmount) {
+        this.paidAmount = paidAmount;
+    }
+
     public LocalDate getExpirationDate() {
         return expirationDate;
     }
@@ -124,12 +156,12 @@ public class Fee {
         this.paid = paid;
     }
 
-    public LocalDate getDatePayment() {
-        return datePayment;
+    public LocalDateTime getLastPaymentAt() {
+        return lastPaymentAt;
     }
 
-    public void setDatePayment(LocalDate datePayment) {
-        this.datePayment = datePayment;
+    public void setLastPaymentAt(LocalDateTime lastPaymentAt) {
+        this.lastPaymentAt = lastPaymentAt;
     }
 
     public PaymentMethod getPaymentMethod() {
@@ -140,14 +172,37 @@ public class Fee {
         this.paymentMethod = paymentMethod;
     }
 
-    // public boolean isAdditional() {
-    //     return additional;
-    // }
+    public List<Payment> getPayments() {
+        return payments;
+    }
 
-    // public void setAdditional(boolean additional) {
-    //     this.additional = additional;
-    // }
+    public void setPayments(List<Payment> payments) {
+        this.payments = payments;
+    }
 
+    /** Monto pendiente de esta cuota (nunca negativo). */
+    public BigDecimal getPendingAmount() {
+        BigDecimal total = amount != null ? amount : BigDecimal.ZERO;
+        return total.subtract(getPaidAmount()).max(BigDecimal.ZERO);
+    }
+
+    /** Recalcula el flag {@code paid} a partir del acumulado cobrado. */
+    public void refreshPaid() {
+        BigDecimal total = amount != null ? amount : BigDecimal.ZERO;
+        this.paid = total.signum() > 0 && getPaidAmount().compareTo(total) >= 0;
+    }
+
+    /**
+     * Registra un cobro: acumula el monto, guarda el horario y actualiza el flag.
+     * No toca el monto programado de la cuota.
+     */
+    public void applyPayment(Payment payment) {
+        this.payments.add(payment);
+        this.paidAmount = getPaidAmount().add(payment.getAmount());
+        this.lastPaymentAt = payment.getPaidAt();
+        this.paymentMethod = payment.getPaymentMethod();
+        refreshPaid();
+    }
 
     @Override
     public int hashCode() {
@@ -159,7 +214,7 @@ public class Fee {
         result = prime * result + ((amount == null) ? 0 : amount.hashCode());
         result = prime * result + ((expirationDate == null) ? 0 : expirationDate.hashCode());
         result = prime * result + ((paid == null) ? 0 : paid.hashCode());
-        result = prime * result + ((datePayment == null) ? 0 : datePayment.hashCode());
+        result = prime * result + ((lastPaymentAt == null) ? 0 : lastPaymentAt.hashCode());
         return result;
     }
 
@@ -202,14 +257,11 @@ public class Fee {
                 return false;
         } else if (!paid.equals(other.paid))
             return false;
-        if (datePayment == null) {
-            if (other.datePayment != null)
+        if (lastPaymentAt == null) {
+            if (other.lastPaymentAt != null)
                 return false;
-        } else if (!datePayment.equals(other.datePayment))
+        } else if (!lastPaymentAt.equals(other.lastPaymentAt))
             return false;
         return true;
     }
-
-
-    
 }

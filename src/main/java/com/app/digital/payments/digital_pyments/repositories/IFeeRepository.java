@@ -23,26 +23,26 @@ public interface IFeeRepository extends JpaRepository<Fee, Long>, JpaSpecificati
     @EntityGraph(attributePaths = { "sale", "sale.client" })
     Page<Fee> findAll(org.springframework.data.jpa.domain.Specification<Fee> spec, Pageable pageable);
 
-    // Resumen (cantidad y monto efectivo) de cuotas pendientes que vencen en una fecha exacta
-    @Query("SELECT COUNT(f), SUM(CASE WHEN f.amount > 0 THEN f.amount ELSE s.amountFee END) FROM Fee f JOIN f.sale s " +
+    // Resumen (cantidad y monto efectivo) de cuotas pendientes que vencen en una fecha exacta.
+    // Pendiente = monto de la cuota menos lo ya cobrado (pago parcial), nunca mas
+    // que la deuda de la venta (ver QueryFragments.MONTO_EFECTIVO_CUOTA).
+    @Query("SELECT COUNT(f), SUM(" + QueryFragments.MONTO_EFECTIVO_CUOTA + ") FROM Fee f JOIN f.sale s " +
             "WHERE f.paid = false AND f.expirationDate = :date")
     List<Object[]> sumPendingFeesByExpirationDate(@Param("date") LocalDate date);
 
     // Resumen (cantidad y monto efectivo) de cuotas pendientes vencidas antes de una fecha
-    @Query("SELECT COUNT(f), SUM(CASE WHEN f.amount > 0 THEN f.amount ELSE s.amountFee END) FROM Fee f JOIN f.sale s " +
+    @Query("SELECT COUNT(f), SUM(" + QueryFragments.MONTO_EFECTIVO_CUOTA + ") FROM Fee f JOIN f.sale s " +
             "WHERE f.paid = false AND f.expirationDate < :date")
     List<Object[]> sumOverdueFeesBefore(@Param("date") LocalDate date);
 
-    
+    // Versiones agrupadas por moneda (nunca se suman monedas distintas)
+    @Query("SELECT s.currency, COUNT(f), SUM(" + QueryFragments.MONTO_EFECTIVO_CUOTA + ") FROM Fee f JOIN f.sale s " +
+            "WHERE f.paid = false AND f.expirationDate = :date GROUP BY s.currency")
+    List<Object[]> sumPendingFeesByExpirationDateGrouped(@Param("date") LocalDate date);
 
-    
-    // Suma de paidAmount para fees pagadas en ventas del rango de fechas
-    @Query("SELECT SUM(f.amount) FROM Fee f JOIN f.sale s WHERE f.paid = true AND s.dateCreation BETWEEN :startDate AND :endDate")
-    Double sumPaidAmountBySaleDateCreationBetween(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
-
-    // Contar fees atrasadas (no pagadas y expirationDate < hoy) en ventas del rango
-    @Query("SELECT COUNT(f) FROM Fee f JOIN f.sale s WHERE f.paid = false AND f.expirationDate < :today AND s.dateCreation BETWEEN :startDate AND :endDate")
-    long countOverdueFeesBySaleDateCreationBetween(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate, @Param("today") LocalDate today);
+    @Query("SELECT s.currency, COUNT(f), SUM(" + QueryFragments.MONTO_EFECTIVO_CUOTA + ") FROM Fee f JOIN f.sale s " +
+            "WHERE f.paid = false AND f.expirationDate < :date GROUP BY s.currency")
+    List<Object[]> sumOverdueFeesBeforeGrouped(@Param("date") LocalDate date);
 
     // ------
 

@@ -3,6 +3,7 @@ package com.app.digital.payments.digital_pyments.controllers.advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -41,6 +42,15 @@ public class GlobalExceptionHandler {
         log.warn("Cuerpo de solicitud invalido");
         ApiResponse response = new ApiResponse("Cuerpo de solicitud invalido.", HttpStatus.BAD_REQUEST, null);
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse> handleOptimisticLock(OptimisticLockingFailureException ex) {
+        log.warn("Conflicto de concurrencia al guardar: {}", ex.getMessage());
+        ApiResponse response = new ApiResponse(
+                "No se pudo registrar el cobro porque la operación cambió mientras se procesaba. Volvé a intentar.",
+                HttpStatus.CONFLICT, null);
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(DataAccessException.class)

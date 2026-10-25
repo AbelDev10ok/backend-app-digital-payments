@@ -129,14 +129,15 @@ public class LegacyLoansController {
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse> getDashboardStats(
             @RequestParam(required = false) Integer year,
-            @RequestParam(required = false) Integer month
+            @RequestParam(required = false) Integer month,
+            @RequestParam(required = false) String currency
         ) {
         if (year == null || month == null) {
             LocalDate now = LocalDate.now();
             year = now.getYear();
             month = now.getMonthValue();
         }
-        DashboardStatsDto stats = ventaQueryServices.getDashboardStats(year, month);
+        DashboardStatsDto stats = ventaQueryServices.getDashboardStats(year, month, currency);
         return ResponseEntity.ok().body(new ApiResponse("Dashboard obtenido correctamente", HttpStatus.OK, stats));
     }
 }

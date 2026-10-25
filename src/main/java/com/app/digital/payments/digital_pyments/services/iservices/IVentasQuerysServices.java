@@ -69,5 +69,5 @@ public interface IVentasQuerysServices {
     Map<String, Object> getClientStats();
 
     // obtener todas las estadisticas del dashboard para un mes/año
-    DashboardStatsDto getDashboardStats(int year, int month);
+    DashboardStatsDto getDashboardStats(int year, int month, String currency);
 }

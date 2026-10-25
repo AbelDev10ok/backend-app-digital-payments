@@ -3,7 +3,9 @@ package com.app.digital.payments.digital_pyments.models.dtos;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Respuesta de la agenda de cobros: cuotas pendientes que vencen hoy
@@ -18,7 +20,8 @@ public class CobrosHoyResponseDto {
 
     public static class Resumen {
         private long cantidad;
-        private BigDecimal monto = BigDecimal.ZERO;
+        // Montos por moneda ISO 4217: las monedas distintas nunca se suman
+        private Map<String, BigDecimal> monto = new LinkedHashMap<>();
 
         public long getCantidad() {
             return cantidad;
@@ -28,11 +31,11 @@ public class CobrosHoyResponseDto {
             this.cantidad = cantidad;
         }
 
-        public BigDecimal getMonto() {
+        public Map<String, BigDecimal> getMonto() {
             return monto;
         }
 
-        public void setMonto(BigDecimal monto) {
+        public void setMonto(Map<String, BigDecimal> monto) {
             this.monto = monto;
         }
     }

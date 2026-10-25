@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.app.digital.payments.digital_pyments.models.Fee;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
+import com.app.digital.payments.digital_pyments.models.dtos.PaymentDto;
 
 public interface IFeeServices {
      Fee getFeeById(Long feeId);        
@@ -13,6 +14,8 @@ public interface IFeeServices {
      FeeDto postponeFee(Long feeId, LocalDate newDate,LocalDate newDatePayment, BigDecimal amount);
     //  List<FeeDto> getPriorityFees();
      List<FeeDto> getFeeBySaleId(Long feeId) ;
+     // Historial de cobros de una cuota, con fecha y hora
+     List<PaymentDto> getPaymentsByFeeId(Long feeId);
     //  List<FeeDto> getFeesByStatus(FeeStatus status, LocalDate date);
     //  List<FeeDto> getOutstandingFeeByClientId(Long clientId);
     void deleteFee(Long feeId);

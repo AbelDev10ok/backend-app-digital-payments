@@ -99,14 +99,14 @@ public class ClientController {
     // calcula la deuda total de un cliente para ventas
     @GetMapping("/{id}/deuda-ventas")
     public ResponseEntity<?> calcularDeudaTotalVentas(@PathVariable Long id) {
-        BigDecimal deudaTotal = clientServices.calcularDeudaTotalVentas(id);
+        Map<String, BigDecimal> deudaTotal = clientServices.calcularDeudaTotalVentas(id);
         return ResponseEntity.ok(deudaTotal);
     }
 
     // calcula el total de ventas pagadas de un cliente
     @GetMapping("/{id}/total-ventas-pagadas")
     public ResponseEntity<?> calcularTotalVentasPagadas(@PathVariable Long id) {
-        BigDecimal totalVentasPagadas = clientServices.calcularTotalVentasPagadas(id);
+        Map<String, BigDecimal> totalVentasPagadas = clientServices.calcularTotalVentasPagadas(id);
         return ResponseEntity.ok(totalVentasPagadas)
         ;
     }
@@ -115,14 +115,14 @@ public class ClientController {
     @GetMapping("/{id}/deuda-prestamos")
     public ResponseEntity<?> calcularDeudaTotalPrestamos(@PathVariable Long id)
     {
-        BigDecimal deudaTotal = clientServices.calcularDeudaTotalPrestamos(id);
+        Map<String, BigDecimal> deudaTotal = clientServices.calcularDeudaTotalPrestamos(id);
         return ResponseEntity.ok(deudaTotal);
     }
 
     // calcula el total de prestamos pagados de un cliente
     @GetMapping("/{id}/total-prestamos-pagados")    
     public ResponseEntity<?> calcularTotalPrestamosPagados(@PathVariable Long id) {
-        BigDecimal totalPrestamosPagados = clientServices.calcularTotalPrestamosPagados(id);
+        Map<String, BigDecimal> totalPrestamosPagados = clientServices.calcularTotalPrestamosPagados(id);
         return ResponseEntity.ok(totalPrestamosPagados);
     }
 

@@ -2,6 +2,7 @@ package com.app.digital.payments.digital_pyments.models.dtos;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * Fila de la vista global de cuotas y de la agenda de cobros del dia.
@@ -20,10 +21,19 @@ public class CuotaListItemDto {
     private Integer numeroCuota;
     private Integer totalCuotas;
     private BigDecimal monto;
+    // Deuda restante de la venta a la que pertenece la cuota: es el tope real de
+    // lo que se puede cobrar en ella (una cuota puede ser mayor que la deuda).
+    private BigDecimal deudaVenta;
     private LocalDate fechaVencimiento;
     private Boolean pagada = false;
     private LocalDate fechaPago;
     private String paymentMethod;
+
+    // Fecha y hora del ultimo cobro
+    private LocalDateTime fechaPagoHora;
+
+    // Moneda (ISO 4217) heredada de la venta (snapshot de la transacción)
+    private String currency;
     private Long diasAtraso;
     private String estado; // TODAY | DELAYED | UPCOMING | PAID
 
@@ -110,6 +120,14 @@ public class CuotaListItemDto {
         this.monto = monto;
     }
 
+    public BigDecimal getDeudaVenta() {
+        return deudaVenta;
+    }
+
+    public void setDeudaVenta(BigDecimal deudaVenta) {
+        this.deudaVenta = deudaVenta;
+    }
+
     public LocalDate getFechaVencimiento() {
         return fechaVencimiento;
     }
@@ -156,5 +174,21 @@ public class CuotaListItemDto {
 
     public void setEstado(String estado) {
         this.estado = estado;
+    }
+
+    public LocalDateTime getFechaPagoHora() {
+        return fechaPagoHora;
+    }
+
+    public void setFechaPagoHora(LocalDateTime fechaPagoHora) {
+        this.fechaPagoHora = fechaPagoHora;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 }

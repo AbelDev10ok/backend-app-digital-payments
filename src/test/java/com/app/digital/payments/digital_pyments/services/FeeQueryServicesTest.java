@@ -1,6 +1,7 @@
 package com.app.digital.payments.digital_pyments.services;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -57,6 +58,7 @@ class FeeQueryServicesTest {
         sale.setKind(SaleKind.VENTA);
         sale.setQuiantityFees(12);
         sale.setAmountFee(new BigDecimal("150"));
+        sale.setRemainingAmount(new BigDecimal("1200"));
 
         Fee vencida = new Fee(sale, 1, new BigDecimal("0"), LocalDate.now().minusDays(5));
         vencida.setId(10L);
@@ -85,6 +87,8 @@ class FeeQueryServicesTest {
         assertEquals(12, dto.getTotalCuotas());
         // La cuota no tiene monto fijado (0): se usa el valor acordado de la venta
         assertEquals(new BigDecimal("150"), dto.getMonto());
+        // La deuda de la venta viaja con la cuota: es el tope de lo cobrable
+        assertEquals(new BigDecimal("1200"), dto.getDeudaVenta());
         assertEquals("DELAYED", dto.getEstado());
         assertEquals(5L, dto.getDiasAtraso());
         assertEquals(Boolean.FALSE, dto.getPagada());
@@ -119,31 +123,47 @@ class FeeQueryServicesTest {
 
     @Test
     void getCobrosDeHoyArmaResumenYAgenda() {
-        when(feeRepository.sumPendingFeesByExpirationDate(any(LocalDate.class)))
-                .thenReturn(List.<Object[]>of(new Object[] { 2L, new BigDecimal("300") }));
-        when(feeRepository.sumOverdueFeesBefore(any(LocalDate.class)))
-                .thenReturn(List.<Object[]>of(new Object[] { 1L, new BigDecimal("150") }));
+        when(feeRepository.sumPendingFeesByExpirationDateGrouped(any(LocalDate.class)))
+                .thenReturn(List.<Object[]>of(new Object[] { "ARS", 2L, new BigDecimal("300") }));
+        when(feeRepository.sumOverdueFeesBeforeGrouped(any(LocalDate.class)))
+                .thenReturn(List.<Object[]>of(new Object[] { "ARS", 1L, new BigDecimal("150") }));
 
         CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(null);
 
         assertEquals(LocalDate.now(), response.getFecha());
         assertEquals(2, response.getHoy().getCantidad());
-        assertEquals(new BigDecimal("300"), response.getHoy().getMonto());
+        assertEquals(0, new BigDecimal("300").compareTo(response.getHoy().getMonto().get("ARS")));
         assertEquals(1, response.getVencidas().getCantidad());
-        assertEquals(new BigDecimal("150"), response.getVencidas().getMonto());
+        assertEquals(0, new BigDecimal("150").compareTo(response.getVencidas().getMonto().get("ARS")));
         // El item mockeado es la cuota vencida de setUp
         assertEquals("DELAYED", response.getItems().get(0).getEstado());
     }
 
     @Test
+    void getCobrosDeHoyNoSumaMonedasDistintas() {
+        when(feeRepository.sumPendingFeesByExpirationDateGrouped(any(LocalDate.class)))
+                .thenReturn(List.<Object[]>of(
+                        new Object[] { "ARS", 1L, new BigDecimal("150000") },
+                        new Object[] { "USD", 1L, new BigDecimal("320") }));
+        when(feeRepository.sumOverdueFeesBeforeGrouped(any(LocalDate.class))).thenReturn(List.of());
+
+        CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(null);
+
+        assertEquals(2, response.getHoy().getCantidad());
+        assertEquals(2, response.getHoy().getMonto().size());
+        assertEquals(0, new BigDecimal("150000").compareTo(response.getHoy().getMonto().get("ARS")));
+        assertEquals(0, new BigDecimal("320").compareTo(response.getHoy().getMonto().get("USD")));
+    }
+
+    @Test
     void getCobrosDeHoyToleraResumenVacio() {
-        when(feeRepository.sumPendingFeesByExpirationDate(any(LocalDate.class))).thenReturn(List.of());
-        when(feeRepository.sumOverdueFeesBefore(any(LocalDate.class))).thenReturn(List.of());
+        when(feeRepository.sumPendingFeesByExpirationDateGrouped(any(LocalDate.class))).thenReturn(List.of());
+        when(feeRepository.sumOverdueFeesBeforeGrouped(any(LocalDate.class))).thenReturn(List.of());
 
         CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(LocalDate.now().plusDays(1));
 
         assertEquals(0, response.getHoy().getCantidad());
-        assertEquals(BigDecimal.ZERO, response.getHoy().getMonto());
+        assertTrue(response.getHoy().getMonto().isEmpty());
         assertEquals(0, response.getVencidas().getCantidad());
         assertEquals(LocalDate.now().plusDays(1), response.getFecha());
     }

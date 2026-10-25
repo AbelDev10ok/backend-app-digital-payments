@@ -3,10 +3,13 @@ package com.app.digital.payments.digital_pyments.services;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,6 +21,7 @@ import com.app.digital.payments.digital_pyments.models.dtos.SaleResponseDto;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IVentasQuerysServices;
+import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 
@@ -184,34 +188,51 @@ public class VentaQueryServices implements IVentasQuerysServices {
         return stats;
     }
 
-    // Método para obtener todas las estadísticas del dashboard para un mes/año
+    // Método para obtener todas las estadísticas del dashboard para un mes/año.
+    // currency = null o "TODAS" muestra todas las monedas; un código ISO 4217
+    // acota montos Y conteos a esa moneda (nunca se suman monedas distintas).
     @Transactional(readOnly = true)
-    public DashboardStatsDto getDashboardStats(int year, int month) {
+    public DashboardStatsDto getDashboardStats(int year, int month, String currency) {
         LocalDate today = LocalDate.now();
+        String filtro = filtroMoneda(currency);
         DashboardStatsDto dto = new DashboardStatsDto();
         dto.setYear(year);
         dto.setMonth(month);
 
-        // ----- Resumen del mes -----
-        DashboardStatsDto.Resumen resumen = dto.getResumen();
-        resumen.setTotalVendido(saleRepository.findTotalSalesAmountByMonthAndYear(month, year).orElse(BigDecimal.ZERO));
-        resumen.setTotalCobrado(saleRepository.findTotalCollectedAmountByMonthAndYear(month, year).orElse(BigDecimal.ZERO));
-        resumen.setGanancia(saleRepository.findTotalProfitByMonthAndYear(month, year).orElse(BigDecimal.ZERO));
-        resumen.setReembolsos(saleRepository.findTotalRefundsByMonthAndYear(month, year).orElse(BigDecimal.ZERO));
-        resumen.setPendientePorCobrar(saleRepository.sumRemainingAmountByStatusAndMonthYear(SaleStatus.ACTIVE, year, month).orElse(BigDecimal.ZERO));
+        // Monedas presentes en los datos (para el selector): se calculan sin filtrar
+        dto.setMonedasDisponibles(saleRepository.findDistinctCurrencies().stream()
+                .filter(m -> m != null)
+                .map(m -> m.trim().toUpperCase())
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList()));
 
+        // ----- Resumen del mes (montos agrupados por moneda) -----
+        DashboardStatsDto.Resumen resumen = dto.getResumen();
+        resumen.setTotalVendido(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.findTotalSalesAmountByMonthAndYearGrouped(month, year)), filtro));
+        resumen.setTotalCobrado(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.findTotalCollectedAmountByMonthAndYearGrouped(month, year)), filtro));
+        resumen.setGanancia(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.findTotalProfitByMonthAndYearGrouped(month, year)), filtro));
+        resumen.setReembolsos(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.findTotalRefundsByMonthAndYearGrouped(month, year)), filtro));
+        resumen.setPendienteDelMes(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.sumRemainingAmountByStatusAndMonthYearGrouped(SaleStatus.ACTIVE, year, month)), filtro));
+        // Deuda real a hoy: no depende del mes consultado (sólo del filtro de moneda)
+        resumen.setDeudaTotal(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.sumRemainingAmountByStatusGrouped(SaleStatus.ACTIVE)), filtro));
+
+        // Filas: (moneda, estado, cantidad) — el filtro acota también los conteos
         long completadas = 0;
         long pendientes = 0;
         long canceladas = 0;
-        for (Object[] row : saleRepository.countSalesByStatusInMonth(year, month)) {
-            SaleStatus status = (SaleStatus) row[0];
-            long count = ((Number) row[1]).longValue();
+        for (Object[] row : saleRepository.countSalesByStatusInMonthGrouped(year, month)) {
+            if (!coincide((String) row[0], filtro)) {
+                continue;
+            }
+            SaleStatus status = (SaleStatus) row[1];
+            long count = row[2] != null ? ((Number) row[2]).longValue() : 0;
             if (status == SaleStatus.COMPLETED) {
-                completadas = count;
+                completadas += count;
             } else if (status == SaleStatus.ACTIVE) {
-                pendientes = count;
+                pendientes += count;
             } else if (status == SaleStatus.CANCELED) {
-                canceladas = count;
+                canceladas += count;
             }
         }
         resumen.setCompletadas(completadas);
@@ -219,37 +240,45 @@ public class VentaQueryServices implements IVentasQuerysServices {
         resumen.setCanceladas(canceladas);
         resumen.setTotalVentas(completadas + pendientes + canceladas);
 
-        List<Object[]> overdue = saleRepository.findOverdueFees(today);
-        if (!overdue.isEmpty() && overdue.get(0)[0] != null) {
-            Object[] row = overdue.get(0);
-            resumen.getCuotasVencidas().setCantidad(((Number) row[0]).longValue());
-            resumen.getCuotasVencidas().setMonto(row[1] != null ? (BigDecimal) row[1] : BigDecimal.ZERO);
+        // Filas agrupadas: (moneda, cantidad, monto). La cantidad es global;
+        // los montos nunca se suman entre monedas distintas. Alcance: a hoy.
+        for (Object[] row : saleRepository.findOverdueFeesGrouped(today)) {
+            if (!coincide((String) row[0], filtro)) {
+                continue;
+            }
+            resumen.getCuotasVencidas().setCantidad(
+                    resumen.getCuotasVencidas().getCantidad() + (row[1] != null ? ((Number) row[1]).longValue() : 0));
+            CurrencyUtils.acumular(resumen.getCuotasVencidas().getMonto(), (String) row[0],
+                    row[2] instanceof BigDecimal monto ? monto : null);
         }
 
         // ----- Anual -----
         DashboardStatsDto.Anual anual = dto.getAnual();
-        anual.setTotalVendido(saleRepository.findTotalSalesAmountByYear(year).orElse(BigDecimal.ZERO));
-        anual.setTotalCobrado(saleRepository.findTotalCollectedAmountByYear(year).orElse(BigDecimal.ZERO));
-        anual.setGanancia(saleRepository.findTotalProfitByYear(year).orElse(BigDecimal.ZERO));
+        anual.setTotalVendido(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.findTotalSalesAmountByYearGrouped(year)), filtro));
+        anual.setTotalCobrado(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.findTotalCollectedAmountByYearGrouped(year)), filtro));
+        anual.setGanancia(soloMoneda(CurrencyUtils.montosPorMoneda(saleRepository.findTotalProfitByYearGrouped(year)), filtro));
 
         long yearCompletadas = 0;
         long yearPendientes = 0;
         long yearCanceladas = 0;
-        for (Object[] row : saleRepository.countSalesByStatusInYear(year)) {
-            SaleStatus status = (SaleStatus) row[0];
-            long count = ((Number) row[1]).longValue();
+        for (Object[] row : saleRepository.countSalesByStatusInYearGrouped(year)) {
+            if (!coincide((String) row[0], filtro)) {
+                continue;
+            }
+            SaleStatus status = (SaleStatus) row[1];
+            long count = row[2] != null ? ((Number) row[2]).longValue() : 0;
             if (status == SaleStatus.COMPLETED) {
-                yearCompletadas = count;
+                yearCompletadas += count;
             } else if (status == SaleStatus.ACTIVE) {
-                yearPendientes = count;
+                yearPendientes += count;
             } else if (status == SaleStatus.CANCELED) {
-                yearCanceladas = count;
+                yearCanceladas += count;
             }
         }
         anual.setTotalVentas(yearCompletadas + yearPendientes + yearCanceladas);
 
-        // ----- Serie de los últimos 12 meses -----
-        LocalDate first = today.minusMonths(11).withDayOfMonth(1);
+        // ----- Serie de 12 meses hasta el mes seleccionado -----
+        LocalDate first = LocalDate.of(year, month, 1).minusMonths(11);
         Map<Integer, DashboardStatsDto.Monthly> byMonth = new TreeMap<>();
         for (int i = 0; i < 12; i++) {
             LocalDate monthDate = first.plusMonths(i);
@@ -259,58 +288,119 @@ public class VentaQueryServices implements IVentasQuerysServices {
             entry.setMonth(monthDate.getMonthValue());
             byMonth.put(key, entry);
         }
-        for (Object[] row : saleRepository.findMonthlySalesSeries(first)) {
+        for (Object[] row : saleRepository.findMonthlySalesSeriesGrouped(first)) {
             int key = ((Number) row[0]).intValue() * 100 + ((Number) row[1]).intValue();
             DashboardStatsDto.Monthly entry = byMonth.get(key);
             if (entry != null) {
-                entry.setVendido(row[2] != null ? (BigDecimal) row[2] : BigDecimal.ZERO);
-                entry.setGanancia(row[3] != null ? (BigDecimal) row[3] : BigDecimal.ZERO);
+                // Filas: (año, mes, moneda, vendido, ganancia) — sin sumar monedas
+                if (!coincide((String) row[2], filtro)) {
+                    continue;
+                }
+                CurrencyUtils.acumular(entry.getVendido(), (String) row[2], row[3] instanceof BigDecimal monto ? monto : null);
+                CurrencyUtils.acumular(entry.getGanancia(), (String) row[2], row[4] instanceof BigDecimal monto ? monto : null);
             }
         }
-        for (Object[] row : saleRepository.findMonthlyCollectedSeries(first)) {
+        for (Object[] row : saleRepository.findMonthlyCollectedSeriesGrouped(first.atStartOfDay())) {
             int key = ((Number) row[0]).intValue() * 100 + ((Number) row[1]).intValue();
             DashboardStatsDto.Monthly entry = byMonth.get(key);
             if (entry != null) {
-                entry.setCobrado(row[2] != null ? (BigDecimal) row[2] : BigDecimal.ZERO);
+                if (!coincide((String) row[2], filtro)) {
+                    continue;
+                }
+                CurrencyUtils.acumular(entry.getCobrado(), (String) row[2], row[3] instanceof BigDecimal monto ? monto : null);
             }
         }
         dto.setSerie12Meses(new ArrayList<>(byMonth.values()));
 
         // ----- Top clientes del año -----
-        Map<Long, BigDecimal> collectedByClient = new HashMap<>();
-        for (Object[] row : saleRepository.findCollectedAmountByClientInYear(year)) {
-            collectedByClient.put(((Number) row[0]).longValue(),
-                    row[1] != null ? (BigDecimal) row[1] : BigDecimal.ZERO);
+        // Filas agrupadas por cliente y moneda: los montos se muestran por moneda
+        // y el orden es por cantidad de transacciones (un ranking por monto
+        // cruzaría monedas).
+        Map<Long, Map<String, BigDecimal>> collectedByClient = new HashMap<>();
+        for (Object[] row : saleRepository.findCollectedAmountByClientInYearGrouped(year)) {
+            if (!coincide((String) row[1], filtro)) {
+                continue;
+            }
+            Long clientId = ((Number) row[0]).longValue();
+            Map<String, BigDecimal> montos = collectedByClient.computeIfAbsent(clientId, id -> new LinkedHashMap<>());
+            CurrencyUtils.acumular(montos, (String) row[1], row[2] instanceof BigDecimal monto ? monto : null);
         }
 
-        List<DashboardStatsDto.TopClient> topClients = new ArrayList<>();
-        List<Object[]> topRows = saleRepository.findTopClientsByYear(year);
-        for (Object[] row : topRows.subList(0, Math.min(5, topRows.size()))) {
-            DashboardStatsDto.TopClient topClient = new DashboardStatsDto.TopClient();
-            topClient.setClientId(((Number) row[0]).longValue());
-            topClient.setClientName((String) row[1]);
-            topClient.setTotalVentas(((Number) row[2]).longValue());
-            topClient.setTotalVendido(row[3] != null ? (BigDecimal) row[3] : BigDecimal.ZERO);
-            topClient.setTotalCobrado(collectedByClient.getOrDefault(topClient.getClientId(), BigDecimal.ZERO));
-            topClients.add(topClient);
+        Map<Long, DashboardStatsDto.TopClient> byClient = new LinkedHashMap<>();
+        Map<Long, Long> ventasPorCliente = new HashMap<>();
+        for (Object[] row : saleRepository.findTopClientsByYearGrouped(year)) {
+            if (!coincide((String) row[2], filtro)) {
+                continue;
+            }
+            Long clientId = ((Number) row[0]).longValue();
+            DashboardStatsDto.TopClient topClient = byClient.get(clientId);
+            if (topClient == null) {
+                topClient = new DashboardStatsDto.TopClient();
+                topClient.setClientId(clientId);
+                topClient.setClientName((String) row[1]);
+                byClient.put(clientId, topClient);
+            }
+            ventasPorCliente.merge(clientId, row[3] != null ? ((Number) row[3]).longValue() : 0L, Long::sum);
+            CurrencyUtils.acumular(topClient.getTotalVendido(), (String) row[2], row[4] instanceof BigDecimal monto ? monto : null);
         }
-        dto.setTopClientes(topClients);
+
+        List<DashboardStatsDto.TopClient> topClients = new ArrayList<>(byClient.values());
+        topClients.sort(Comparator.comparingLong(
+                (DashboardStatsDto.TopClient tc) -> ventasPorCliente.getOrDefault(tc.getClientId(), 0L)).reversed());
+        for (DashboardStatsDto.TopClient topClient : topClients) {
+            topClient.setTotalVentas(ventasPorCliente.getOrDefault(topClient.getClientId(), 0L));
+            topClient.setTotalCobrado(collectedByClient.getOrDefault(topClient.getClientId(), new LinkedHashMap<>()));
+        }
+        dto.setTopClientes(topClients.subList(0, Math.min(5, topClients.size())));
 
         // ----- Ventas por tipo de transacción (kind) en el mes -----
-        List<DashboardStatsDto.ProductTypeSales> byProductType = new ArrayList<>();
-        for (Object[] row : saleRepository.findSalesByKindInMonth(year, month)) {
-            DashboardStatsDto.ProductTypeSales entry = new DashboardStatsDto.ProductTypeSales();
-            entry.setTipo(((SaleKind) row[0]).name());
-            entry.setTotalVentas(((Number) row[1]).longValue());
-            entry.setTotalVendido(row[2] != null ? (BigDecimal) row[2] : BigDecimal.ZERO);
-            byProductType.add(entry);
+        Map<String, DashboardStatsDto.ProductTypeSales> byKind = new LinkedHashMap<>();
+        for (Object[] row : saleRepository.findSalesByKindInMonthGrouped(year, month)) {
+            if (!coincide((String) row[1], filtro)) {
+                continue;
+            }
+            String tipo = ((SaleKind) row[0]).name();
+            DashboardStatsDto.ProductTypeSales entry = byKind.get(tipo);
+            if (entry == null) {
+                entry = new DashboardStatsDto.ProductTypeSales();
+                entry.setTipo(tipo);
+                byKind.put(tipo, entry);
+            }
+            entry.setTotalVentas(entry.getTotalVentas() + (row[2] != null ? ((Number) row[2]).longValue() : 0));
+            CurrencyUtils.acumular(entry.getTotalVendido(), (String) row[1], row[3] instanceof BigDecimal monto ? monto : null);
         }
-        dto.setPorTipoProducto(byProductType);
+        dto.setPorTipoProducto(new ArrayList<>(byKind.values()));
 
-        // ----- Clientes -----
+        // ----- Clientes (conteos globales: no dependen de la moneda) -----
         dto.getClientes().setTotalClientes(clientRepository.count());
         dto.getClientes().setActivos(clientRepository.countActiveClients());
 
         return dto;
+    }
+
+    /** Normaliza el filtro de moneda del dashboard (null = todas las monedas). */
+    private static String filtroMoneda(String currency) {
+        if (currency == null || currency.isBlank() || "TODAS".equalsIgnoreCase(currency.trim())) {
+            return null;
+        }
+        return currency.trim().toUpperCase();
+    }
+
+    /** ¿La moneda de una fila coincide con el filtro? (null = todas). */
+    private static boolean coincide(String moneda, String filtro) {
+        return filtro == null || filtro.equals(CurrencyUtils.orDefault(moneda, null));
+    }
+
+    /** Deja solo la moneda filtrada en un mapa de montos (null = todas). */
+    private static Map<String, BigDecimal> soloMoneda(Map<String, BigDecimal> montos, String filtro) {
+        if (filtro == null) {
+            return montos;
+        }
+        Map<String, BigDecimal> resultado = new LinkedHashMap<>();
+        BigDecimal monto = montos.get(filtro);
+        if (monto != null) {
+            resultado.put(filtro, monto);
+        }
+        return resultado;
     }
 }

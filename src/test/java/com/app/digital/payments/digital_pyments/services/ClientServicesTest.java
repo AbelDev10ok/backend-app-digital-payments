@@ -2,6 +2,7 @@ package com.app.digital.payments.digital_pyments.services;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
@@ -25,6 +27,7 @@ import com.app.digital.payments.digital_pyments.models.dtos.ClientRequestDto;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
+import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 import com.app.digital.payments.digital_pyments.utils.TenantContext;
 
 class ClientServicesTest {
@@ -60,15 +63,54 @@ class ClientServicesTest {
     }
 
     @Test
-    void createClientCreaYNormalizaNombre() {
+    void createClientRespetaElNombreTalCualLoEscribioElUsuario() {
         when(clientRepository.findByDni("12345678")).thenReturn(Optional.empty());
         when(clientRepository.findByEmail("juan@example.com")).thenReturn(Optional.empty());
         when(clientRepository.save(any(Client.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ClientDto result = clientServices.createClient(dtoValido());
 
-        assertEquals("juan pérez", result.getName());
+        assertEquals("Juan Pérez", result.getName());
         verify(clientRepository).save(any(Client.class));
+    }
+
+    @Test
+    void updateClientGuardaElNombreConSuFormato() {
+        Client existente = new Client();
+        existente.setId(1L);
+        Business business = new Business();
+        business.setId(1L);
+        existente.setBusiness(business);
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(existente));
+        when(clientRepository.save(any(Client.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ClientDto result = clientServices.updateClient(1L, dtoValido());
+
+        assertEquals("Juan Pérez", result.getName());
+    }
+
+    @Test
+    void updateClientRechazaNombreRepetidoIgnorandoMayusculas() {
+        Client existente = new Client();
+        existente.setId(1L);
+        Business business = new Business();
+        business.setId(1L);
+        existente.setBusiness(business);
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(existente));
+
+        Client otro = new Client();
+        otro.setId(99L);
+        otro.setName("JUAN PEREZ");
+        when(clientRepository.findByBusinessIdAndNameIgnoreCase(1L, "Juan Pérez"))
+                .thenReturn(List.of(otro));
+
+        ClientRequestDto dto = dtoValido();
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> clientServices.updateClient(1L, dto));
+
+        assertEquals("El nombre del cliente ya está en uso por otro cliente.", ex.getMessage());
+        verify(clientRepository, never()).save(any(Client.class));
     }
 
     @Test
@@ -147,32 +189,46 @@ class ClientServicesTest {
     // --- Tests de cobranza (fee paid) ---
 
     @Test
-    void calcularTotalVentasPagadas_conCuotasPagadas_devuelveSuma() {
-        when(clientRepository.sumCollectedAmountByClientIdExcludingKind(1L, SaleKind.PRESTAMO))
-                .thenReturn(new BigDecimal("40"));
+    void calcularTotalVentasPagadas_conCuotasPagadas_devuelveSumaPorMoneda() {
+        when(clientRepository.sumCollectedAmountByClientIdExcludingKindGrouped(1L, SaleKind.PRESTAMO))
+                .thenReturn(List.<Object[]>of(new Object[] { "ARS", new BigDecimal("40") }));
 
-        BigDecimal result = clientServices.calcularTotalVentasPagadas(1L);
+        Map<String, BigDecimal> result = clientServices.calcularTotalVentasPagadas(1L);
 
-        assertEquals(0, new BigDecimal("40").compareTo(result));
+        assertEquals(0, new BigDecimal("40").compareTo(result.get("ARS")));
     }
 
     @Test
-    void calcularTotalPrestamosPagados_conCuotasPagadas_devuelveSuma() {
-        when(clientRepository.sumCollectedAmountByClientIdByKind(1L, SaleKind.PRESTAMO))
-                .thenReturn(new BigDecimal("200"));
+    void calcularTotalPrestamosPagados_conCuotasPagadas_devuelveSumaPorMoneda() {
+        when(clientRepository.sumCollectedAmountByClientIdByKindGrouped(1L, SaleKind.PRESTAMO))
+                .thenReturn(List.<Object[]>of(new Object[] { "USD", new BigDecimal("200") }));
 
-        BigDecimal result = clientServices.calcularTotalPrestamosPagados(1L);
+        Map<String, BigDecimal> result = clientServices.calcularTotalPrestamosPagados(1L);
 
-        assertEquals(0, new BigDecimal("200").compareTo(result));
+        assertEquals(0, new BigDecimal("200").compareTo(result.get("USD")));
     }
 
     @Test
-    void calcularTotalVentasPagadas_sinPagos_devuelveCero() {
-        when(clientRepository.sumCollectedAmountByClientIdExcludingKind(1L, SaleKind.PRESTAMO))
-                .thenReturn(null);
+    void calcularTotalVentasPagadas_sinPagos_devuelveMapaVacio() {
+        when(clientRepository.sumCollectedAmountByClientIdExcludingKindGrouped(1L, SaleKind.PRESTAMO))
+                .thenReturn(List.<Object[]>of());
 
-        BigDecimal result = clientServices.calcularTotalVentasPagadas(1L);
+        Map<String, BigDecimal> result = clientServices.calcularTotalVentasPagadas(1L);
 
-        assertEquals(0, BigDecimal.ZERO.compareTo(result));
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void calcularDeudaTotalVentas_agrupaPorMonedaSinSumar() {
+        when(clientRepository.sumRemainingAmountByClientIdAndSalesNotCompletedGrouped(1L, SaleStatus.COMPLETED, SaleKind.PRESTAMO))
+                .thenReturn(List.<Object[]>of(
+                        new Object[] { "ARS", new BigDecimal("150000") },
+                        new Object[] { "USD", new BigDecimal("320") }));
+
+        Map<String, BigDecimal> result = clientServices.calcularDeudaTotalVentas(1L);
+
+        assertEquals(2, result.size());
+        assertEquals(0, new BigDecimal("150000").compareTo(result.get("ARS")));
+        assertEquals(0, new BigDecimal("320").compareTo(result.get("USD")));
     }
 }

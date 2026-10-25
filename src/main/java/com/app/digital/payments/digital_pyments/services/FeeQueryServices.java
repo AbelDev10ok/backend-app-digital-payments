@@ -22,6 +22,7 @@ import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto
 import com.app.digital.payments.digital_pyments.models.dtos.CuotaListItemDto;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IFeeQueryServices;
+import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
 import com.app.digital.payments.digital_pyments.utils.FeeStatus;
 
 import jakarta.persistence.criteria.Predicate;
@@ -60,8 +61,8 @@ public class FeeQueryServices implements IFeeQueryServices {
         CobrosHoyResponseDto response = new CobrosHoyResponseDto();
         response.setFecha(hoy);
 
-        aplicarResumen(response.getHoy(), feeRepository.sumPendingFeesByExpirationDate(hoy));
-        aplicarResumen(response.getVencidas(), feeRepository.sumOverdueFeesBefore(hoy));
+        aplicarResumen(response.getHoy(), feeRepository.sumPendingFeesByExpirationDateGrouped(hoy));
+        aplicarResumen(response.getVencidas(), feeRepository.sumOverdueFeesBeforeGrouped(hoy));
 
         Specification<Fee> spec = (root, query, cb) -> cb.and(
                 cb.isFalse(root.get("paid")),
@@ -128,6 +129,7 @@ public class FeeQueryServices implements IFeeQueryServices {
 
         dto.setSaleDescription(sale.getDescriptionProduct());
         dto.setSaleKind(sale.getKind() == null ? null : sale.getKind().name());
+        dto.setCurrency(sale.getCurrency());
         dto.setNumeroCuota(fee.getNumberFee());
         dto.setTotalCuotas(sale.getQuiantityFees());
 
@@ -138,15 +140,19 @@ public class FeeQueryServices implements IFeeQueryServices {
         }
         dto.setMonto(monto);
 
+        // Tope de lo cobrable en esta cuota: la deuda restante de la venta
+        dto.setDeudaVenta(sale.getRemainingAmount());
+
         dto.setFechaVencimiento(fee.getExpirationDate());
         dto.setPagada(Boolean.TRUE.equals(fee.getPaid()));
-        dto.setFechaPago(fee.getDatePayment());
+        dto.setFechaPago(fee.getLastPaymentAt() != null ? fee.getLastPaymentAt().toLocalDate() : null);
+        dto.setFechaPagoHora(fee.getLastPaymentAt());
         dto.setPaymentMethod(fee.getPaymentMethod() != null ? fee.getPaymentMethod().name() : null);
 
         if (Boolean.TRUE.equals(fee.getPaid())) {
             dto.setEstado("PAID");
-            long atrasoAlPagar = fee.getDatePayment() == null ? 0
-                    : ChronoUnit.DAYS.between(fee.getExpirationDate(), fee.getDatePayment());
+            long atrasoAlPagar = fee.getLastPaymentAt() == null ? 0
+                    : ChronoUnit.DAYS.between(fee.getExpirationDate(), fee.getLastPaymentAt().toLocalDate());
             dto.setDiasAtraso(Math.max(atrasoAlPagar, 0));
         } else {
             long atraso = ChronoUnit.DAYS.between(fee.getExpirationDate(), hoy);
@@ -163,11 +169,15 @@ public class FeeQueryServices implements IFeeQueryServices {
     }
 
     private void aplicarResumen(Resumen resumen, List<Object[]> filas) {
-        if (filas == null || filas.isEmpty()) {
+        if (filas == null) {
             return;
         }
-        Object[] fila = filas.get(0);
-        resumen.setCantidad(fila[0] == null ? 0 : ((Number) fila[0]).longValue());
-        resumen.setMonto(fila[1] instanceof BigDecimal monto ? monto : BigDecimal.ZERO);
+        // Filas agrupadas por moneda: (moneda, cantidad, monto). Nunca se suman
+        // montos de monedas distintas; la cantidad sí es global.
+        for (Object[] fila : filas) {
+            resumen.setCantidad(resumen.getCantidad() + (fila[1] != null ? ((Number) fila[1]).longValue() : 0));
+            CurrencyUtils.acumular(resumen.getMonto(), (String) fila[0],
+                    fila[2] instanceof BigDecimal monto ? monto : null);
+        }
     }
 }

@@ -1,5 +1,7 @@
 package com.app.digital.payments.digital_pyments.models.dtos;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 // Conteos por estado para los badges del sidebar (p.ej. "A Cobrar (4)")
 public class SalesCountsDto {
 
@@ -41,10 +43,15 @@ public class SalesCountsDto {
         this.canceled = canceled;
     }
 
+    // Jackson deriva el nombre público del getter: `getACobrar()` se serializaba
+    // como "acobrar" y el frontend (que lee `aCobrar`) nunca veía el conteo del
+    // sidebar. Se fija el nombre del contrato.
+    @JsonProperty("aCobrar")
     public long getACobrar() {
         return aCobrar;
     }
 
+    @JsonProperty("aCobrar")
     public void setACobrar(long aCobrar) {
         this.aCobrar = aCobrar;
     }

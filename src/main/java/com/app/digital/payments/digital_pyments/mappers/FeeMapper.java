@@ -17,8 +17,13 @@ public class FeeMapper {
         dto.setExpirationDate(fee.getExpirationDate());
         // dto.setOriginalExpirationDate(fee.getExpirationOrigialDate());
         dto.setPaid(fee.getPaid());
-        dto.setPaymentDate(fee.getDatePayment());
+        dto.setLastPaymentAt(fee.getLastPaymentAt());
+        dto.setPaymentDate(fee.getLastPaymentAt() != null ? fee.getLastPaymentAt().toLocalDate() : null);
         dto.setPaymentMethod(fee.getPaymentMethod() != null ? fee.getPaymentMethod().name() : null);
+        // Cobrado de la cuota (el log de pagos es la fuente de verdad)
+        dto.setPaidAmount(fee.getPaidAmount());
+        // La cuota hereda la moneda de su venta (snapshot de la transacción)
+        dto.setCurrency(fee.getSale().getCurrency());
         // dto.setPostponed(fee.getPostponed());
 
         dto.setStatus(fee.getPaid() ? "PAID" :  

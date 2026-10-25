@@ -2,12 +2,24 @@ package com.app.digital.payments.digital_pyments.models.dtos;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Estadísticas del dashboard.
+ *
+ * Regla de dominio: los montos de monedas distintas NUNCA se suman entre sí.
+ * Por eso cada métrica monetaria es un mapa {moneda ISO 4217 → monto}; los
+ * conteos (ventas, estados, clientes) sí son globales porque contar no mezcla
+ * monedas.
+ */
 public class DashboardStatsDto {
 
     private int year;
     private int month;
+    /** Monedas (ISO 4217) presentes en los datos: alimentan el selector de moneda */
+    private List<String> monedasDisponibles = new ArrayList<>();
     private Resumen resumen = new Resumen();
     private Anual anual = new Anual();
     private List<Monthly> serie12Meses = new ArrayList<>();
@@ -32,6 +44,14 @@ public class DashboardStatsDto {
 
     public void setMonth(int month) {
         this.month = month;
+    }
+
+    public List<String> getMonedasDisponibles() {
+        return monedasDisponibles;
+    }
+
+    public void setMonedasDisponibles(List<String> monedasDisponibles) {
+        this.monedasDisponibles = monedasDisponibles;
     }
 
     public Resumen getResumen() {
@@ -84,11 +104,12 @@ public class DashboardStatsDto {
 
     public static class Resumen {
         private long totalVentas;
-        private BigDecimal totalVendido = BigDecimal.ZERO;
-        private BigDecimal totalCobrado = BigDecimal.ZERO;
-        private BigDecimal pendientePorCobrar = BigDecimal.ZERO;
-        private BigDecimal ganancia = BigDecimal.ZERO;
-        private BigDecimal reembolsos = BigDecimal.ZERO;
+        private Map<String, BigDecimal> totalVendido = new LinkedHashMap<>();
+        private Map<String, BigDecimal> totalCobrado = new LinkedHashMap<>();
+        private Map<String, BigDecimal> pendienteDelMes = new LinkedHashMap<>();
+        private Map<String, BigDecimal> deudaTotal = new LinkedHashMap<>();
+        private Map<String, BigDecimal> ganancia = new LinkedHashMap<>();
+        private Map<String, BigDecimal> reembolsos = new LinkedHashMap<>();
         private long completadas;
         private long pendientes;
         private long canceladas;
@@ -102,43 +123,51 @@ public class DashboardStatsDto {
             this.totalVentas = totalVentas;
         }
 
-        public BigDecimal getTotalVendido() {
+        public Map<String, BigDecimal> getTotalVendido() {
             return totalVendido;
         }
 
-        public void setTotalVendido(BigDecimal totalVendido) {
+        public void setTotalVendido(Map<String, BigDecimal> totalVendido) {
             this.totalVendido = totalVendido;
         }
 
-        public BigDecimal getTotalCobrado() {
+        public Map<String, BigDecimal> getTotalCobrado() {
             return totalCobrado;
         }
 
-        public void setTotalCobrado(BigDecimal totalCobrado) {
+        public void setTotalCobrado(Map<String, BigDecimal> totalCobrado) {
             this.totalCobrado = totalCobrado;
         }
 
-        public BigDecimal getPendientePorCobrar() {
-            return pendientePorCobrar;
+        public Map<String, BigDecimal> getPendienteDelMes() {
+            return pendienteDelMes;
         }
 
-        public void setPendientePorCobrar(BigDecimal pendientePorCobrar) {
-            this.pendientePorCobrar = pendientePorCobrar;
+        public void setPendienteDelMes(Map<String, BigDecimal> pendienteDelMes) {
+            this.pendienteDelMes = pendienteDelMes;
         }
 
-        public BigDecimal getGanancia() {
+        public Map<String, BigDecimal> getDeudaTotal() {
+            return deudaTotal;
+        }
+
+        public void setDeudaTotal(Map<String, BigDecimal> deudaTotal) {
+            this.deudaTotal = deudaTotal;
+        }
+
+        public Map<String, BigDecimal> getGanancia() {
             return ganancia;
         }
 
-        public void setGanancia(BigDecimal ganancia) {
+        public void setGanancia(Map<String, BigDecimal> ganancia) {
             this.ganancia = ganancia;
         }
 
-        public BigDecimal getReembolsos() {
+        public Map<String, BigDecimal> getReembolsos() {
             return reembolsos;
         }
 
-        public void setReembolsos(BigDecimal reembolsos) {
+        public void setReembolsos(Map<String, BigDecimal> reembolsos) {
             this.reembolsos = reembolsos;
         }
 
@@ -177,7 +206,7 @@ public class DashboardStatsDto {
 
     public static class CuotasVencidas {
         private long cantidad;
-        private BigDecimal monto = BigDecimal.ZERO;
+        private Map<String, BigDecimal> monto = new LinkedHashMap<>();
 
         public long getCantidad() {
             return cantidad;
@@ -187,20 +216,20 @@ public class DashboardStatsDto {
             this.cantidad = cantidad;
         }
 
-        public BigDecimal getMonto() {
+        public Map<String, BigDecimal> getMonto() {
             return monto;
         }
 
-        public void setMonto(BigDecimal monto) {
+        public void setMonto(Map<String, BigDecimal> monto) {
             this.monto = monto;
         }
     }
 
     public static class Anual {
         private long totalVentas;
-        private BigDecimal totalVendido = BigDecimal.ZERO;
-        private BigDecimal totalCobrado = BigDecimal.ZERO;
-        private BigDecimal ganancia = BigDecimal.ZERO;
+        private Map<String, BigDecimal> totalVendido = new LinkedHashMap<>();
+        private Map<String, BigDecimal> totalCobrado = new LinkedHashMap<>();
+        private Map<String, BigDecimal> ganancia = new LinkedHashMap<>();
 
         public long getTotalVentas() {
             return totalVentas;
@@ -210,27 +239,27 @@ public class DashboardStatsDto {
             this.totalVentas = totalVentas;
         }
 
-        public BigDecimal getTotalVendido() {
+        public Map<String, BigDecimal> getTotalVendido() {
             return totalVendido;
         }
 
-        public void setTotalVendido(BigDecimal totalVendido) {
+        public void setTotalVendido(Map<String, BigDecimal> totalVendido) {
             this.totalVendido = totalVendido;
         }
 
-        public BigDecimal getTotalCobrado() {
+        public Map<String, BigDecimal> getTotalCobrado() {
             return totalCobrado;
         }
 
-        public void setTotalCobrado(BigDecimal totalCobrado) {
+        public void setTotalCobrado(Map<String, BigDecimal> totalCobrado) {
             this.totalCobrado = totalCobrado;
         }
 
-        public BigDecimal getGanancia() {
+        public Map<String, BigDecimal> getGanancia() {
             return ganancia;
         }
 
-        public void setGanancia(BigDecimal ganancia) {
+        public void setGanancia(Map<String, BigDecimal> ganancia) {
             this.ganancia = ganancia;
         }
     }
@@ -238,9 +267,9 @@ public class DashboardStatsDto {
     public static class Monthly {
         private int year;
         private int month;
-        private BigDecimal vendido = BigDecimal.ZERO;
-        private BigDecimal cobrado = BigDecimal.ZERO;
-        private BigDecimal ganancia = BigDecimal.ZERO;
+        private Map<String, BigDecimal> vendido = new LinkedHashMap<>();
+        private Map<String, BigDecimal> cobrado = new LinkedHashMap<>();
+        private Map<String, BigDecimal> ganancia = new LinkedHashMap<>();
 
         public int getYear() {
             return year;
@@ -258,27 +287,27 @@ public class DashboardStatsDto {
             this.month = month;
         }
 
-        public BigDecimal getVendido() {
+        public Map<String, BigDecimal> getVendido() {
             return vendido;
         }
 
-        public void setVendido(BigDecimal vendido) {
+        public void setVendido(Map<String, BigDecimal> vendido) {
             this.vendido = vendido;
         }
 
-        public BigDecimal getCobrado() {
+        public Map<String, BigDecimal> getCobrado() {
             return cobrado;
         }
 
-        public void setCobrado(BigDecimal cobrado) {
+        public void setCobrado(Map<String, BigDecimal> cobrado) {
             this.cobrado = cobrado;
         }
 
-        public BigDecimal getGanancia() {
+        public Map<String, BigDecimal> getGanancia() {
             return ganancia;
         }
 
-        public void setGanancia(BigDecimal ganancia) {
+        public void setGanancia(Map<String, BigDecimal> ganancia) {
             this.ganancia = ganancia;
         }
     }
@@ -287,8 +316,8 @@ public class DashboardStatsDto {
         private Long clientId;
         private String clientName;
         private long totalVentas;
-        private BigDecimal totalVendido = BigDecimal.ZERO;
-        private BigDecimal totalCobrado = BigDecimal.ZERO;
+        private Map<String, BigDecimal> totalVendido = new LinkedHashMap<>();
+        private Map<String, BigDecimal> totalCobrado = new LinkedHashMap<>();
 
         public Long getClientId() {
             return clientId;
@@ -314,19 +343,19 @@ public class DashboardStatsDto {
             this.totalVentas = totalVentas;
         }
 
-        public BigDecimal getTotalVendido() {
+        public Map<String, BigDecimal> getTotalVendido() {
             return totalVendido;
         }
 
-        public void setTotalVendido(BigDecimal totalVendido) {
+        public void setTotalVendido(Map<String, BigDecimal> totalVendido) {
             this.totalVendido = totalVendido;
         }
 
-        public BigDecimal getTotalCobrado() {
+        public Map<String, BigDecimal> getTotalCobrado() {
             return totalCobrado;
         }
 
-        public void setTotalCobrado(BigDecimal totalCobrado) {
+        public void setTotalCobrado(Map<String, BigDecimal> totalCobrado) {
             this.totalCobrado = totalCobrado;
         }
     }
@@ -334,7 +363,7 @@ public class DashboardStatsDto {
     public static class ProductTypeSales {
         private String tipo;
         private long totalVentas;
-        private BigDecimal totalVendido = BigDecimal.ZERO;
+        private Map<String, BigDecimal> totalVendido = new LinkedHashMap<>();
 
         public String getTipo() {
             return tipo;
@@ -352,11 +381,11 @@ public class DashboardStatsDto {
             this.totalVentas = totalVentas;
         }
 
-        public BigDecimal getTotalVendido() {
+        public Map<String, BigDecimal> getTotalVendido() {
             return totalVendido;
         }
 
-        public void setTotalVendido(BigDecimal totalVendido) {
+        public void setTotalVendido(Map<String, BigDecimal> totalVendido) {
             this.totalVendido = totalVendido;
         }
     }

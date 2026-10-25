@@ -1,6 +1,7 @@
 package com.app.digital.payments.digital_pyments.models.dtos;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 public class ClientDto {
     private Long id;
@@ -11,7 +12,8 @@ public class ClientDto {
     private boolean isSeller;
     private String sellerName;
     private String dni;
-    private BigDecimal deudaTotal;
+    // Deuda por moneda ISO 4217: las monedas distintas nunca se suman
+    private Map<String, BigDecimal> deudaTotal;
 
     public ClientDto() {
     }
@@ -91,11 +93,11 @@ public class ClientDto {
         this.dni = dni;
     }
 
-    public BigDecimal getDeudaTotal() {
+    public Map<String, BigDecimal> getDeudaTotal() {
         return deudaTotal;
     }
 
-    public void setDeudaTotal(BigDecimal deudaTotal) {
+    public void setDeudaTotal(Map<String, BigDecimal> deudaTotal) {
         this.deudaTotal = deudaTotal;
     }
 }

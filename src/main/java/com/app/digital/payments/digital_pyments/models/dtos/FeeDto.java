@@ -2,6 +2,7 @@ package com.app.digital.payments.digital_pyments.models.dtos;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public class FeeDto {
     private Long id;
@@ -15,6 +16,14 @@ public class FeeDto {
     private String productDescription; // Nuevo: descripción del producto
     // private ClientDto client; // Nuevo: datos básicos del cliente
     private String paymentMethod; // EFECTIVO | TRANSFERENCIA
+
+    // Monto efectivamente cobrado (suma de los pagos)
+    private BigDecimal paidAmount;
+    // Fecha y hora del ultimo cobro (para mostrar el horario)
+    private LocalDateTime lastPaymentAt;
+
+    // Moneda (ISO 4217) heredada de la venta (snapshot de la transacción)
+    private String currency;
     
     // Campos calculados
     private String status; // "PENDING", "PAID"
@@ -146,6 +155,30 @@ public class FeeDto {
 
     public void setPaymentMethod(String paymentMethod) {
         this.paymentMethod = paymentMethod;
+    }
+
+    public BigDecimal getPaidAmount() {
+        return paidAmount;
+    }
+
+    public void setPaidAmount(BigDecimal paidAmount) {
+        this.paidAmount = paidAmount;
+    }
+
+    public LocalDateTime getLastPaymentAt() {
+        return lastPaymentAt;
+    }
+
+    public void setLastPaymentAt(LocalDateTime lastPaymentAt) {
+        this.lastPaymentAt = lastPaymentAt;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
     
 }

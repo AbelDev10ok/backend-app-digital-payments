@@ -3,6 +3,7 @@ package com.app.digital.payments.digital_pyments.services;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -20,6 +21,7 @@ import com.app.digital.payments.digital_pyments.models.dtos.ClientRequestDto;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IClientServices;
+import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 import com.app.digital.payments.digital_pyments.utils.TenantContext;
@@ -63,8 +65,9 @@ public class ClientServices implements IClientServices {
         }
 
         Client cliente = new Client();
-        // mapeo el cliente, normalizando los datos a minúsculas para consistencia
-        cliente.setName(request.getName() != null ? request.getName().toLowerCase() : null);
+        // El nombre se guarda tal como lo escribió el usuario: bajarlo a minúsculas
+        // hacía que el detalle, cobros y el dashboard mostraran "maría gonzález"
+        cliente.setName(request.getName());
         cliente.setTelefono(request.getTelefono());
         cliente.setEmail(request.getEmail());
         cliente.setDireccion(request.getDireccion());
@@ -178,18 +181,21 @@ public class ClientServices implements IClientServices {
 
         Page<Client> clientesPage = clientRepository.findAll(spec, pageable);
 
-        // Enriquecer con deuda total por cliente en una sola query
+        // Enriquecer con deuda total por cliente en una sola query (agrupada por
+        // moneda: las monedas distintas nunca se suman)
         List<Long> clientIds = clientesPage.getContent().stream().map(Client::getId).collect(Collectors.toList());
-        Map<Long, BigDecimal> deudaMap = new HashMap<>();
+        Map<Long, Map<String, BigDecimal>> deudaMap = new HashMap<>();
         if (!clientIds.isEmpty()) {
-            for (Object[] row : clientRepository.sumRemainingAmountByClientIds(clientIds, SaleStatus.ACTIVE)) {
-                deudaMap.put(((Number) row[0]).longValue(), (BigDecimal) row[1]);
+            for (Object[] row : clientRepository.sumRemainingAmountByClientIdsGrouped(clientIds, SaleStatus.ACTIVE)) {
+                Map<String, BigDecimal> montos = deudaMap.computeIfAbsent(((Number) row[0]).longValue(),
+                        id -> new LinkedHashMap<>());
+                CurrencyUtils.acumular(montos, (String) row[1], row[2] instanceof BigDecimal monto ? monto : null);
             }
         }
 
         return clientesPage.map(c -> {
             ClientDto dto = convertirADTO(c);
-            dto.setDeudaTotal(deudaMap.getOrDefault(c.getId(), BigDecimal.ZERO));
+            dto.setDeudaTotal(deudaMap.getOrDefault(c.getId(), new LinkedHashMap<>()));
             return dto;
         });
     }
@@ -220,13 +226,17 @@ public class ClientServices implements IClientServices {
             });
         }
  
-        // VALIDAMOS NOMBRE DEL CLIENTE REPETIDO (insensible a mayúsculas/minúsculas)
+        // VALIDAMOS NOMBRE DEL CLIENTE REPETIDO (insensible a mayúsculas/minúsculas
+        // y acotado al negocio): el nombre ya no se guarda en minúsculas, así que la
+        // comparación dejó de ser un `findByName(nombre.toLowerCase())`
         if (request.getName() != null && !request.getName().isBlank()) {
-            clientRepository.findByName(request.getName().toLowerCase()).ifPresent(existingClient -> {
-                if (!existingClient.getId().equals(id)) {
-                    throw new RuntimeException("El nombre del cliente ya está en uso por otro cliente.");
-                }
-            });
+            boolean nombreRepetido = clientRepository
+                .findByBusinessIdAndNameIgnoreCase(negocioId, request.getName())
+                .stream()
+                .anyMatch(existente -> !existente.getId().equals(id));
+            if (nombreRepetido) {
+                throw new RuntimeException("El nombre del cliente ya está en uso por otro cliente.");
+            }
         }
  
         // VALIDAMOS EMAIL DEL CLIENTE REPETIDO (dentro del negocio)
@@ -256,8 +266,8 @@ public class ClientServices implements IClientServices {
         }
 
  
-        // mapeo el cliente, normalizando los datos a minúsculas para consistencia
-        cliente.setName(request.getName() != null ? request.getName().toLowerCase() : null);
+        // El nombre se guarda tal como lo escribió el usuario (ver createClient)
+        cliente.setName(request.getName());
         cliente.setTelefono(request.getTelefono());
         cliente.setEmail(request.getEmail());
         cliente.setDireccion(request.getDireccion());
@@ -287,39 +297,35 @@ public class ClientServices implements IClientServices {
         clientRepository.delete(cliente);
     }
 
-    // calcula la deuda total de un cliente para ventas 
+    // calcula la deuda total de un cliente para ventas (por moneda)
     @Override
     @Transactional(readOnly = true)
-    public BigDecimal calcularDeudaTotalVentas(Long clientId) {
-        BigDecimal deudaTotal = clientRepository.sumRemainingAmountByClientIdAndSalesNotCompleted(
-                clientId, SaleStatus.COMPLETED, SaleKind.PRESTAMO);
-        return deudaTotal != null ? deudaTotal : BigDecimal.ZERO;
+    public Map<String, BigDecimal> calcularDeudaTotalVentas(Long clientId) {
+        return CurrencyUtils.montosPorMoneda(clientRepository.sumRemainingAmountByClientIdAndSalesNotCompletedGrouped(
+                clientId, SaleStatus.COMPLETED, SaleKind.PRESTAMO));
     }   
-    // calcula el total cobrado en ventas de un cliente (suma de cuotas pagadas)
+    // calcula el total cobrado en ventas de un cliente (suma de cuotas pagadas, por moneda)
     @Override
     @Transactional(readOnly = true)
-    public BigDecimal calcularTotalVentasPagadas(Long clientId) {
-        BigDecimal total = clientRepository.sumCollectedAmountByClientIdExcludingKind(
-                clientId, SaleKind.PRESTAMO);
-        return total != null ? total : BigDecimal.ZERO;
+    public Map<String, BigDecimal> calcularTotalVentasPagadas(Long clientId) {
+        return CurrencyUtils.montosPorMoneda(clientRepository.sumCollectedAmountByClientIdExcludingKindGrouped(
+                clientId, SaleKind.PRESTAMO));
     }
 
-    // calcula la deuda total de un cliente para prestamos
+    // calcula la deuda total de un cliente para prestamos (por moneda)
     @Override
     @Transactional(readOnly = true)
-    public BigDecimal calcularDeudaTotalPrestamos(Long clientId) {
-        BigDecimal deudaTotal = clientRepository.sumRemainingAmountByClientIdAndLoansNotCompleted(
-                clientId, SaleStatus.COMPLETED, SaleKind.PRESTAMO);
-        return deudaTotal != null ? deudaTotal : BigDecimal.ZERO;
+    public Map<String, BigDecimal> calcularDeudaTotalPrestamos(Long clientId) {
+        return CurrencyUtils.montosPorMoneda(clientRepository.sumRemainingAmountByClientIdAndLoansNotCompletedGrouped(
+                clientId, SaleStatus.COMPLETED, SaleKind.PRESTAMO));
     }
 
-    // calcula el total cobrado en prestamos de un cliente (suma de cuotas pagadas)
+    // calcula el total cobrado en prestamos de un cliente (suma de cuotas pagadas, por moneda)
     @Override
     @Transactional(readOnly = true)
-    public BigDecimal calcularTotalPrestamosPagados(Long clientId) {
-        BigDecimal total = clientRepository.sumCollectedAmountByClientIdByKind(
-                clientId, SaleKind.PRESTAMO);
-        return total != null ? total : BigDecimal.ZERO;
+    public Map<String, BigDecimal> calcularTotalPrestamosPagados(Long clientId) {
+        return CurrencyUtils.montosPorMoneda(clientRepository.sumCollectedAmountByClientIdByKindGrouped(
+                clientId, SaleKind.PRESTAMO));
     }
 
     // obtener todos los vendedores que puedan vender a los clientes

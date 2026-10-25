@@ -2,6 +2,7 @@ package com.app.digital.payments.digital_pyments.services.iservices;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,13 +25,13 @@ public interface IClientServices {
     
     public void deletedClient(Long id);
 
-    public BigDecimal calcularDeudaTotalVentas(Long clientId);
+    public Map<String, BigDecimal> calcularDeudaTotalVentas(Long clientId);
 
-    public BigDecimal calcularTotalVentasPagadas(Long clientId);
+    public Map<String, BigDecimal> calcularTotalVentasPagadas(Long clientId);
 
-    public BigDecimal calcularDeudaTotalPrestamos(Long clientId);
+    public Map<String, BigDecimal> calcularDeudaTotalPrestamos(Long clientId);
 
-    public BigDecimal calcularTotalPrestamosPagados(Long clientId);
+    public Map<String, BigDecimal> calcularTotalPrestamosPagados(Long clientId);
 
     void habilitarClientVendedor(Long id);
     
