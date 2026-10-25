@@ -4,10 +4,13 @@ public class ProductTypeDto {
     private Long id;
     private String name;
     private String icon;
-    
+    private Long parentId;
+    private String parentName;
+    private String slug;
+
     // Constructores, getters y setters
     public ProductTypeDto() {}
-    
+
     public ProductTypeDto(Long id, String name) {
         this.id = id;
         this.name = name;
@@ -17,6 +20,15 @@ public class ProductTypeDto {
         this.id = id;
         this.name = name;
         this.icon = icon;
+    }
+
+    public ProductTypeDto(Long id, String name, String icon, Long parentId, String parentName, String slug) {
+        this.id = id;
+        this.name = name;
+        this.icon = icon;
+        this.parentId = parentId;
+        this.parentName = parentName;
+        this.slug = slug;
     }
 
     public Long getId() {
@@ -43,4 +55,27 @@ public class ProductTypeDto {
         this.icon = icon;
     }
 
+    public Long getParentId() {
+        return parentId;
+    }
+
+    public void setParentId(Long parentId) {
+        this.parentId = parentId;
+    }
+
+    public String getParentName() {
+        return parentName;
+    }
+
+    public void setParentName(String parentName) {
+        this.parentName = parentName;
+    }
+
+    public String getSlug() {
+        return slug;
+    }
+
+    public void setSlug(String slug) {
+        this.slug = slug;
+    }
 }

@@ -22,4 +22,12 @@ public interface IProductTypeRepository extends JpaRepository<ProductType, Long>
     // Verificar si existe otra categoría con ese nombre dentro del negocio (excluyendo una dada)
     boolean existsByNameAndBusinessIdAndIdNot(String name, Long businessId, Long id);
 
+    // Slug estable dentro del negocio
+    boolean existsBySlugAndBusinessId(String slug, Long businessId);
+
+    boolean existsBySlugAndBusinessIdAndIdNot(String slug, Long businessId, Long id);
+
+    // Protección al borrar: una categoría con subcategorías no se elimina
+    boolean existsByParentId(Long parentId);
+
 }

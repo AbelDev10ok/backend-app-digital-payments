@@ -13,9 +13,14 @@ import jakarta.persistence.UniqueConstraint;
 
 import org.hibernate.annotations.Filter;
 
+/**
+ * Categoría del catálogo. Puede colgar de otra categoría (jerarquía por
+ * negocio). El slug es estable para URLs o filtros y no cambia al renombrar.
+ */
 @Entity
 @Table(name = "product_type", uniqueConstraints = {
-		@UniqueConstraint(name = "uk_product_type_business_name", columnNames = { "business_id", "name" })
+		@UniqueConstraint(name = "uk_product_type_business_name", columnNames = { "business_id", "name" }),
+		@UniqueConstraint(name = "uk_product_type_business_slug", columnNames = { "business_id", "slug" })
 })
 @Filter(name = "tenantFilter", condition = "business_id = :businessId")
 public class ProductType {
@@ -29,6 +34,15 @@ public class ProductType {
 
     @Column(nullable = true)
     private String icon;
+
+    // Categoría padre (opcional). La jerarquía nunca puede tener ciclos.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id", nullable = true)
+    private ProductType parent;
+
+    // Identificador estable dentro del negocio (se deriva del nombre al crear).
+    @Column(length = 120)
+    private String slug;
 
     // El nombre de la categoria es unico dentro del negocio (V5)
     @ManyToOne(fetch = FetchType.LAZY)
@@ -57,6 +71,22 @@ public class ProductType {
 
     public void setIcon(String icon) {
         this.icon = icon;
+    }
+
+    public ProductType getParent() {
+        return parent;
+    }
+
+    public void setParent(ProductType parent) {
+        this.parent = parent;
+    }
+
+    public String getSlug() {
+        return slug;
+    }
+
+    public void setSlug(String slug) {
+        this.slug = slug;
     }
 
     public Business getBusiness() {

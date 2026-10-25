@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.app.digital.payments.digital_pyments.models.Role;
+import com.app.digital.payments.digital_pyments.models.dtos.ProductTypeDto;
 import com.app.digital.payments.digital_pyments.services.ProductTypeServices;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,13 +34,18 @@ public class ProductTypeController {
     }
     
     @PostMapping()
-    public ResponseEntity<?> crearProductType(@RequestBody String entity) {
-        return ResponseEntity.ok(productTypeServices.createProductType(entity));
+    public ResponseEntity<?> crearProductType(@RequestBody ProductTypeDto entity) {
+        boolean creado = productTypeServices.createProductType(entity.getName(), entity.getParentId(), entity.getSlug());
+        if (creado) {
+            return ResponseEntity.ok(java.util.Map.of("created", true));
+        }
+        return ResponseEntity.badRequest().body(java.util.Map.of("created", false));
     }
     
     @PutMapping("/{id}")
-    public ResponseEntity<?> modificarProductType(@PathVariable Long id, @RequestBody String entity) {
-        boolean actualizado = productTypeServices.updateProductType(id, entity);
+    public ResponseEntity<?> modificarProductType(@PathVariable Long id, @RequestBody ProductTypeDto entity) {
+        boolean actualizado = productTypeServices.updateProductType(id, entity.getName(), entity.getParentId(),
+                entity.getSlug());
         if (actualizado) {
             return ResponseEntity.ok(java.util.Map.of("updated", true));
         }

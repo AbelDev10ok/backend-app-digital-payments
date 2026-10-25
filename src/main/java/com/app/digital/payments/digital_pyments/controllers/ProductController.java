@@ -1,6 +1,5 @@
 package com.app.digital.payments.digital_pyments.controllers;
 
-import java.math.BigDecimal;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
@@ -9,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.app.digital.payments.digital_pyments.models.Role;
-import com.app.digital.payments.digital_pyments.models.dtos.ProductDto;
+import com.app.digital.payments.digital_pyments.models.dtos.ProductRequestDto;
 import com.app.digital.payments.digital_pyments.services.ProductServices;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,21 +34,14 @@ public class ProductController {
     }
 
     @PostMapping()
-    public ResponseEntity<?> crearProducto(@RequestBody ProductDto productDto) {
-        BigDecimal price = productDto.getPrice();
-        boolean creado = productServices.createProduct(productDto.getName(), price, productDto.getStock(),
-                productDto.getProductTypeId());
-        if (creado) {
-            return ResponseEntity.ok(Map.of("created", true));
-        }
-        return ResponseEntity.badRequest().body(Map.of("created", false));
+    public ResponseEntity<?> crearProducto(@RequestBody ProductRequestDto productDto) {
+        return ResponseEntity.ok(Map.of("created", true,
+                "variants", productServices.createProduct(productDto)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> modificarProducto(@PathVariable Long id, @RequestBody ProductDto productDto) {
-        BigDecimal price = productDto.getPrice();
-        boolean actualizado = productServices.updateProduct(id, productDto.getName(), price, productDto.getStock(),
-                productDto.getProductTypeId());
+    public ResponseEntity<?> modificarProducto(@PathVariable Long id, @RequestBody ProductRequestDto productDto) {
+        boolean actualizado = productServices.updateProduct(id, productDto);
         if (actualizado) {
             return ResponseEntity.ok(Map.of("updated", true));
         }

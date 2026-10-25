@@ -182,4 +182,83 @@ class ProductTypeServicesTest {
         assertEquals("TV", result.get(0).getName());
         assertEquals("tv-icon", result.get(0).getIcon());
     }
+
+    @Test
+    void createProductTypeGeneraSlugDelNombre() {
+        when(productTypeRepository.existsByNameAndBusinessId("CUIDADO PERSONAL", NEGOCIO_ID)).thenReturn(false);
+
+        assertTrue(productTypeServices.createProductType("  Cuidado Personal  ", null, null));
+
+        org.mockito.ArgumentCaptor<ProductType> captor = org.mockito.ArgumentCaptor.forClass(ProductType.class);
+        verify(productTypeRepository).save(captor.capture());
+        assertEquals("CUIDADO PERSONAL", captor.getValue().getName());
+        assertEquals("cuidado-personal", captor.getValue().getSlug());
+        assertTrue(captor.getValue().getParent() == null);
+    }
+
+    @Test
+    void createProductTypeConPadreValidaQueSeaDelNegocio() {
+        ProductType padre = new ProductType();
+        padre.setId(2L);
+        com.app.digital.payments.digital_pyments.models.Business otro = new com.app.digital.payments.digital_pyments.models.Business();
+        otro.setId(99L);
+        padre.setBusiness(otro);
+        when(productTypeRepository.existsByNameAndBusinessId("ROPA", NEGOCIO_ID)).thenReturn(false);
+        when(productTypeRepository.findById(2L)).thenReturn(Optional.of(padre));
+
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> productTypeServices.createProductType("Ropa", 2L, null));
+        verify(productTypeRepository, never()).save(any(ProductType.class));
+    }
+
+    @Test
+    void createProductTypeConSlugRepetidoEsRechazado() {
+        when(productTypeRepository.existsByNameAndBusinessId("ROPA", NEGOCIO_ID)).thenReturn(false);
+        when(productTypeRepository.existsBySlugAndBusinessId("ropa", NEGOCIO_ID)).thenReturn(true);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> productTypeServices.createProductType("Ropa", null, "ropa"));
+        verify(productTypeRepository, never()).save(any(ProductType.class));
+    }
+
+    @Test
+    void deleteProductTypeProtegeCategoriaConSubcategorias() {
+        ProductType categoria = new ProductType();
+        when(productTypeRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(productRepository.existsByProductTypeId(1L)).thenReturn(false);
+        when(productTypeRepository.existsByParentId(1L)).thenReturn(true);
+
+        boolean eliminado = productTypeServices.deleteProductType(1L);
+
+        assertFalse(eliminado);
+        verify(productTypeRepository, never()).delete(any(ProductType.class));
+    }
+
+    @Test
+    void updateProductTypeConPadreNoPermiteCiclos() {
+        ProductType hija = new ProductType();
+        hija.setId(1L);
+        ProductType padre = new ProductType();
+        padre.setId(2L);
+        padre.setParent(hija); // el "padre" propuesto ya cuelga de la categoría
+        when(productTypeRepository.findById(1L)).thenReturn(Optional.of(hija));
+        when(productTypeRepository.findById(2L)).thenReturn(Optional.of(padre));
+        when(productTypeRepository.existsByNameAndBusinessIdAndIdNot("TV", NEGOCIO_ID, 1L)).thenReturn(false);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> productTypeServices.updateProductType(1L, "TV", 2L, null));
+        verify(productTypeRepository, never()).save(any(ProductType.class));
+    }
+
+    @Test
+    void updateProductTypeNoPuedeSerSuPropioPadre() {
+        ProductType categoria = new ProductType();
+        categoria.setId(1L);
+        when(productTypeRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(productTypeRepository.existsByNameAndBusinessIdAndIdNot("TV", NEGOCIO_ID, 1L)).thenReturn(false);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> productTypeServices.updateProductType(1L, "TV", 1L, null));
+        verify(productTypeRepository, never()).save(any(ProductType.class));
+    }
 }
