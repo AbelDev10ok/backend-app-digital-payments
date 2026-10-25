@@ -175,7 +175,8 @@ public class VentaController{
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse> getDashboardStats(
             @RequestParam(required = false) Integer year,
-            @RequestParam(required = false) Integer month
+            @RequestParam(required = false) Integer month,
+            @RequestParam(required = false) String currency
         ) {
 
         // Si no se pasan year/month, usar el mes actual
@@ -185,7 +186,7 @@ public class VentaController{
             month = now.getMonthValue();
         }
 
-        DashboardStatsDto stats = ventaQueryServices.getDashboardStats(year, month);
+        DashboardStatsDto stats = ventaQueryServices.getDashboardStats(year, month, currency);
         return ResponseEntity.ok().body(new ApiResponse("Dashboard obtenido correctamente", HttpStatus.OK, stats));
     }
    

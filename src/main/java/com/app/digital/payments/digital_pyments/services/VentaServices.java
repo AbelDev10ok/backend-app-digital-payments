@@ -3,9 +3,12 @@ package com.app.digital.payments.digital_pyments.services;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.slf4j.Logger;
@@ -19,23 +22,33 @@ import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Predicate;
 
 
+import com.app.digital.payments.digital_pyments.mappers.ProductMapper;
+import com.app.digital.payments.digital_pyments.mappers.SaleDocumentMapper;
+import com.app.digital.payments.digital_pyments.models.Business;
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
+import com.app.digital.payments.digital_pyments.models.Payment;
 import com.app.digital.payments.digital_pyments.models.Product;
 import com.app.digital.payments.digital_pyments.models.ProductType;
+import com.app.digital.payments.digital_pyments.models.ProductVariant;
 import com.app.digital.payments.digital_pyments.models.Sale;
+import com.app.digital.payments.digital_pyments.models.SaleDocument;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleRequestDto;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleUpdateRequestDto;
 import com.app.digital.payments.digital_pyments.models.dtos.SalesCountsDto;
+import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
-import com.app.digital.payments.digital_pyments.repositories.IProductRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
+import com.app.digital.payments.digital_pyments.repositories.ISaleDocumentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IVentaServices;
+import com.app.digital.payments.digital_pyments.utils.DocumentType;
 import com.app.digital.payments.digital_pyments.utils.FeeScheduleCalculator;
+import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
 import com.app.digital.payments.digital_pyments.utils.Payments;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
@@ -51,20 +64,22 @@ public class VentaServices implements IVentaServices {
     private final IClientRepository clientRepository;
     private final IFeeRepository feeRepository;
     private final IProductTypeRepository productTypeRepository;
-    private final IProductRepository productRepository;
+    private final IProductVariantRepository variantRepository;
     private final IBusinessRepository businessRepository;
+    private final ISaleDocumentRepository saleDocumentRepository;
 
     private static final Logger log = LoggerFactory.getLogger(VentaServices.class);
 
     VentaServices(ISaleRepository salesRepository, IClientRepository clientRepository, IFeeRepository feeRepository,
-            IProductTypeRepository productTypeRepository, IProductRepository productRepository,
-            IBusinessRepository businessRepository) {
+            IProductTypeRepository productTypeRepository, IProductVariantRepository variantRepository,
+            IBusinessRepository businessRepository, ISaleDocumentRepository saleDocumentRepository) {
         this.salesRepository = salesRepository;
         this.clientRepository = clientRepository;
         this.feeRepository = feeRepository;
         this.productTypeRepository = productTypeRepository;
-        this.productRepository = productRepository;
+        this.variantRepository = variantRepository;
         this.businessRepository = businessRepository;
+        this.saleDocumentRepository = saleDocumentRepository;
     }
 
     @Transactional
@@ -89,19 +104,28 @@ public class VentaServices implements IVentaServices {
             TenantGuard.verificar(productType.getBusiness() != null ? productType.getBusiness().getId() : null);
         }
 
-        // Producto del catálogo: obligatorio para VENTA, tiene que pertenecer al negocio autenticado
+        // Variante/SKU vendido: obligatorio para VENTA, del negocio y disponible.
+        ProductVariant variant = null;
         Product product = null;
-        if (kind == SaleKind.VENTA && saleDto.getProduct() == null) {
-            throw new IllegalArgumentException("Debe seleccionar un producto para la venta");
-        }
-        if (saleDto.getProduct() != null) {
-            product = productRepository.findById(saleDto.getProduct())
-                    .orElseThrow(() -> new Exception("Producto no encontrado"));
-            TenantGuard.verificar(product.getBusiness() != null ? product.getBusiness().getId() : null);
-        }
-
-        // En VENTA la categoría es la del producto seleccionado, no la del request
         if (kind == SaleKind.VENTA) {
+            if (saleDto.getVariant() == null) {
+                throw new IllegalArgumentException("Debe seleccionar un producto para la venta");
+            }
+            variant = variantRepository.findById(saleDto.getVariant())
+                    .orElseThrow(() -> new Exception("Producto no encontrado"));
+            TenantGuard.verificar(variant.getBusiness() != null ? variant.getBusiness().getId() : null);
+            product = variant.getProduct();
+            if (product == null) {
+                throw new IllegalArgumentException("La variante no tiene un producto asociado");
+            }
+            TenantGuard.verificar(product.getBusiness() != null ? product.getBusiness().getId() : null);
+            if (!Boolean.TRUE.equals(variant.getActive()) || !Boolean.TRUE.equals(product.getActive())) {
+                throw new IllegalArgumentException("El producto está desactivado y no se puede vender");
+            }
+            if (variant.getPrice() == null || variant.getPrice().signum() <= 0) {
+                throw new IllegalArgumentException("El producto no tiene un precio de venta válido");
+            }
+            // En VENTA la categoría es la del producto seleccionado, no la del request
             productType = product.getProductType();
             if (productType == null) {
                 throw new IllegalArgumentException("El producto no tiene una categoría asignada");
@@ -115,20 +139,15 @@ public class VentaServices implements IVentaServices {
             if (quantity <= 0) {
                 throw new IllegalArgumentException("La cantidad debe ser mayor a 0");
             }
+            // Stock obligatorio: no se puede vender lo que no hay.
+            int disponible = variant.getStock() != null ? variant.getStock() : 0;
+            if (disponible < quantity) {
+                throw new IllegalArgumentException(disponible == 0
+                        ? "No hay stock disponible de " + variant.getSku()
+                        : "Stock insuficiente de " + variant.getSku() + ": quedan " + disponible + " unidades");
+            }
         } else {
             quantity = 1;
-        }
-
-        BigDecimal amountFee = saleDto.getAmountFee();
-        if (amountFee != null && amountFee.signum() == 0) {
-            amountFee = saleDto.getFirstFeeAmount();
-        }
-        if (amountFee == null || amountFee.signum() <= 0) {
-            throw new IllegalArgumentException("El monto de la cuota debe ser mayor a 0");
-        }
-
-        if (saleDto.getQuantityFees() == null || saleDto.getQuantityFees() <= 0) {
-            throw new IllegalArgumentException("La cantidad de cuotas debe ser mayor a 0");
         }
 
         Payments paymentType = Payments.fromString(saleDto.getPayments());
@@ -137,21 +156,43 @@ public class VentaServices implements IVentaServices {
             throw new IllegalArgumentException("Un préstamo no puede ser a contado; debe pagarse en cuotas");
         }
 
-        Integer quantityFees = saleDto.getQuantityFees();
-        if (paymentType == Payments.CONTADO) {
-            quantityFees = 1;
+        BigDecimal amountFee = saleDto.getAmountFee();
+        if (amountFee != null && amountFee.signum() == 0) {
+            amountFee = saleDto.getFirstFeeAmount();
         }
 
-        // Costo: para VENTA se toma fijo del precio del producto (no editable);
+        Integer quantityFees = saleDto.getQuantityFees();
+
+        if (kind == SaleKind.VENTA && paymentType == Payments.CONTADO) {
+            // Al contado manda el precio de venta del catálogo:
+            // total = precio_venta_unitario × cantidad.
+            if (variant.getPrice() == null || variant.getPrice().signum() <= 0) {
+                throw new IllegalArgumentException("El producto no tiene un precio de venta válido");
+            }
+            amountFee = variant.getPrice();
+            quantityFees = 1;
+        } else {
+            if (amountFee == null || amountFee.signum() <= 0) {
+                throw new IllegalArgumentException("El monto de la cuota debe ser mayor a 0");
+            }
+            if (quantityFees == null || quantityFees <= 0) {
+                throw new IllegalArgumentException("La cantidad de cuotas debe ser mayor a 0");
+            }
+        }
+
+        // Costo: para VENTA se toma fijo del costo de la variante (no editable);
         // para PRESTAMO es el monto entregado que envía el cliente.
+        final BigDecimal unitPrice;
         final BigDecimal cost;
         if (kind == SaleKind.VENTA) {
-            if (product.getPrice() == null || product.getPrice().signum() <= 0) {
-                throw new IllegalArgumentException("El producto no tiene un precio válido");
+            if (variant.getCost() == null || variant.getCost().signum() < 0) {
+                throw new IllegalArgumentException("El producto no tiene un costo válido");
             }
-            // Costo del negocio = precio unitario x cantidad vendida (V9)
-            cost = product.getPrice().multiply(BigDecimal.valueOf(quantity));
+            unitPrice = variant.getPrice();
+            // Costo del negocio = costo unitario x cantidad vendida (V9)
+            cost = variant.getCost().multiply(BigDecimal.valueOf(quantity));
         } else {
+            unitPrice = null;
             if (saleDto.getCost() == null || saleDto.getCost().signum() <= 0) {
                 throw new IllegalArgumentException("El monto entregado debe ser mayor a 0");
             }
@@ -172,8 +213,24 @@ public class VentaServices implements IVentaServices {
             BigDecimal total = cost.multiply(factor).setScale(2, RoundingMode.HALF_UP);
             amountFee = total.divide(BigDecimal.valueOf(quantityFees), 2, RoundingMode.HALF_UP);
             totalPrice = BigDecimal.valueOf(quantityFees).multiply(amountFee);
+        } else if (kind == SaleKind.VENTA && paymentType == Payments.CONTADO) {
+            // Contado: total = precio de venta unitario × cantidad.
+            totalPrice = amountFee.multiply(BigDecimal.valueOf(quantity));
         } else {
+            // Cuotas: total = monto de cuota × cantidad de cuotas.
             totalPrice = BigDecimal.valueOf(quantityFees).multiply(amountFee);
+        }
+
+        // Piso de la venta: el total a cobrar nunca puede quedar por debajo del
+        // precio de venta del producto (unitario × cantidad). Al contado el total
+        // ya es esa suma; en cuotas se exige sobre cuota × cantidad de cuotas.
+        if (kind == SaleKind.VENTA) {
+            BigDecimal precioDeLista = unitPrice.multiply(BigDecimal.valueOf(quantity));
+            if (totalPrice.compareTo(precioDeLista) < 0) {
+                throw new IllegalArgumentException(
+                        "El total a cobrar no puede ser menor al precio de venta del producto ("
+                                + precioDeLista.stripTrailingZeros().toPlainString() + ")");
+            }
         }
 
         if (kind == SaleKind.VENTA && cost.compareTo(totalPrice) >= 0) {
@@ -186,10 +243,12 @@ public class VentaServices implements IVentaServices {
 
         String description = saleDto.getDescriptionProduct();
         if (kind == SaleKind.VENTA) {
-            // Con más de una unidad la descripción refleja la cantidad (V9)
-            description = quantity > 1
-                    ? quantity + " x " + product.getName()
-                    : product.getName();
+            // Con más de una unidad la descripción refleja la cantidad (V9).
+            // La variante agrega su etiqueta de atributos ("Rojo / M") para que
+            // el detalle se entienda sin abrir el catálogo.
+            String etiqueta = ProductMapper.etiquetaDe(variant);
+            String base = etiqueta.isBlank() ? product.getName() : product.getName() + " (" + etiqueta + ")";
+            description = quantity > 1 ? quantity + " x " + base : base;
         } else if (description == null || description.isBlank()) {
             description = "Préstamo personal";
         }
@@ -199,11 +258,19 @@ public class VentaServices implements IVentaServices {
         newSale.setKind(kind);
         newSale.setDescriptionProduct(description);
         newSale.setProductType(productType);
-        newSale.setProduct(product);
-        newSale.setBusiness(businessRepository.getReferenceById(negocioId));
+        newSale.setVariant(variant);
+        Business business = businessRepository.getReferenceById(negocioId);
+        newSale.setBusiness(business);
+        // Moneda de la operación (ISO 4217): se congela al crear y no se edita
+        // después. La VENTA la hereda de su producto (el precio del catálogo está
+        // expresado ahí); el PRESTAMO, al no tener producto, la elige el usuario.
+        // La moneda del negocio sólo aporta como respaldo de un registro legado
+        // sin moneda propia. Nunca se reinterpreta un importe con la config actual.
+        newSale.setCurrency(resolverMoneda(kind, product, saleDto.getCurrency(), business));
 
         newSale.setPriceTotal(totalPrice);
         newSale.setCost(cost);
+        newSale.setUnitPrice(unitPrice);
         newSale.setInterestRate(kind == SaleKind.PRESTAMO ? rate : null);
         newSale.setQuantity(quantity);
 
@@ -213,7 +280,10 @@ public class VentaServices implements IVentaServices {
             throw new IllegalArgumentException("La fecha de la primera cuota no puede ser anterior a la fecha de la transacción");
         }
 
-        LocalDate firstFeeDate = saleDto.getFirstFeeDate() != null ? saleDto.getFirstFeeDate() : LocalDate.now();
+        // La primera cuota vence con la operación: si no viene informada, se agenda
+        // en la fecha de la venta. Antes caía en "hoy", así que una venta cargada
+        // con fecha pasada corría el plan entero y mostraba otra "fecha final".
+        LocalDate firstFeeDate = saleDto.getFirstFeeDate() != null ? saleDto.getFirstFeeDate() : newSale.getDateCreation();
 
         newSale.setTypePayments(paymentType);
         newSale.setQuiantityFees(quantityFees);
@@ -233,8 +303,6 @@ public class VentaServices implements IVentaServices {
         primeraCuota.setBusiness(newSale.getBusiness());
 
         if (Boolean.TRUE.equals(saleDto.getPayFirstFee())) {
-            primeraCuota.setPaid(true);
-            primeraCuota.setDatePayment(LocalDate.now());
             BigDecimal montoPagado = saleDto.getFirstFeeAmount() != null
                     ? saleDto.getFirstFeeAmount()
                     : amountFee;
@@ -244,7 +312,11 @@ public class VentaServices implements IVentaServices {
             if (montoPagado.compareTo(newSale.getRemainingAmount()) > 0) {
                 throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
             }
+            // La cuota se cierra por lo cobrado y el cobro queda en el log de pagos
             primeraCuota.setAmount(montoPagado);
+            Payment primerPago = new Payment(primeraCuota, montoPagado, LocalDateTime.now(), PaymentMethod.EFECTIVO);
+            primerPago.setBusiness(newSale.getBusiness());
+            primeraCuota.applyPayment(primerPago);
             newSale.deductFromRemainingAmount(montoPagado);
 
             if (newSale.getRemainingAmount().signum() > 0) {
@@ -253,7 +325,9 @@ public class VentaServices implements IVentaServices {
                 siguienteCuota.setNumberFee(2);
                 siguienteCuota.setExpirationDate(FeeScheduleCalculator.nextExpirationDate(firstFeeDate, paymentType));
                 siguienteCuota.setPaid(false);
-                siguienteCuota.setAmount(amountFee);
+                // Nunca por encima de lo que queda por cobrar: si la primera cuota
+                // se cobró por mas que el valor de cuota, la siguiente es por el resto
+                siguienteCuota.setAmount(newSale.montoProximaCuota());
                 siguienteCuota.setBusiness(newSale.getBusiness());
                 fees.add(siguienteCuota);
             }
@@ -261,15 +335,52 @@ public class VentaServices implements IVentaServices {
         fees.add(primeraCuota);
         newSale.setFees(fees);
 
-        // Descontar stock (V9): solo si hay suficiente inventario.
-        if (kind == SaleKind.VENTA && product.getStock() != null && quantity <= product.getStock()) {
-            product.setStock(product.getStock() - quantity);
-            productRepository.save(product);
+        // Descontar stock (V9): el stock es obligatorio y ya se validó que alcanza.
+        if (kind == SaleKind.VENTA && variant.getStock() != null) {
+            variant.setStock(variant.getStock() - quantity);
+            variantRepository.save(variant);
         }
 
         Sale savedSale = salesRepository.save(newSale);
 
         return convertirAVentaResponseDTO(savedSale);
+    }
+
+    /**
+     * ¿El registro trae una moneda propia? Los creados antes de la columna
+     * {@code currency} no la tienen y no se les inventa una.
+     */
+    private static boolean tieneMoneda(String currency) {
+        return currency != null && !currency.isBlank();
+    }
+
+    /**
+     * Moneda de la operación al crearla.
+     *
+     * Regla de dominio: un importe es un número con su moneda, y cambiar la
+     * config del negocio no convierte dinero. Por eso la venta hereda la moneda
+     * de su producto y un pedido que la contradiga se rechaza en vez de
+     * reetiquetar el importe. Un préstamo, sin producto, usa la moneda elegida en
+     * el alta; la del negocio queda como respaldo de los registros legados.
+     */
+    private static String resolverMoneda(SaleKind kind, Product product, String monedaPedida, Business business) {
+        String monedaNegocio = CurrencyUtils.snapshot(business);
+
+        if (kind == SaleKind.VENTA) {
+            String monedaProducto = CurrencyUtils.orDefault(product.getCurrency(), monedaNegocio);
+            if (monedaPedida != null && !monedaPedida.isBlank()
+                    && !monedaProducto.equals(CurrencyUtils.orDefault(monedaPedida, null))) {
+                throw new IllegalArgumentException(
+                        "La moneda de la venta debe ser la del producto (" + monedaProducto + ")");
+            }
+            return monedaProducto;
+        }
+
+        if (monedaPedida != null && !monedaPedida.isBlank() && !CurrencyUtils.esSoportada(monedaPedida)) {
+            throw new IllegalArgumentException(
+                    "La moneda debe ser " + String.join(" o ", CurrencyUtils.MONEDAS_SOPORTADAS));
+        }
+        return CurrencyUtils.orDefault(monedaPedida, monedaNegocio);
     }
 
     // Marca una venta o prestamo como completada, actualizando la fecha final real.
@@ -290,19 +401,25 @@ public class VentaServices implements IVentaServices {
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("No hay cuotas pendientes para completar la venta"));
 
-        BigDecimal paid = amountPaid != null ? amountPaid : nextFee.getAmount();
+        BigDecimal paid = amountPaid != null ? amountPaid : nextFee.getPendingAmount();
         if (paid == null || paid.signum() <= 0) {
             throw new IllegalArgumentException("El monto del pago debe ser mayor a cero");
         }
+        // El tope es la deuda real (total menos cobrado), no un numero guardado viejo
+        sale.recalcularSaldo();
         if (paid.compareTo(sale.getRemainingAmount()) > 0) {
             throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
         }
 
-        sale.deductFromRemainingAmount(paid);
-        nextFee.setPaid(true);
-        nextFee.setDatePayment(LocalDate.now());
+        // La cuota se cierra por lo cobrado y el cobro queda en el log de pagos
         nextFee.setAmount(paid);
+        Payment payment = new Payment(nextFee, paid, LocalDateTime.now(), PaymentMethod.EFECTIVO);
+        payment.setBusiness(sale.getBusiness());
+        nextFee.applyPayment(payment);
         feeRepository.save(nextFee);
+
+        // El saldo sale de los cobros registrados, no de una resta a mano
+        sale.recalcularSaldo();
 
         if (sale.getRemainingAmount().signum() <= 0) {
             sale.setStatus(SaleStatus.COMPLETED);
@@ -332,12 +449,27 @@ public class VentaServices implements IVentaServices {
             TenantGuard.verificar(productType.getBusiness() != null ? productType.getBusiness().getId() : null);
         }
 
+        ProductVariant variant = null;
         Product product = null;
-        if (sale.getProduct() != null) {
-            product = productRepository.findById(sale.getProduct())
+        if (sale.getVariant() != null) {
+            variant = variantRepository.findById(sale.getVariant())
                     .orElseThrow(() -> new Exception("Producto no encontrado"));
-            // el producto tiene que ser del mismo negocio
+            // la variante y su producto tienen que ser del mismo negocio
+            TenantGuard.verificar(variant.getBusiness() != null ? variant.getBusiness().getId() : null);
+            product = variant.getProduct();
+            if (product == null) {
+                throw new IllegalArgumentException("La variante no tiene un producto asociado");
+            }
             TenantGuard.verificar(product.getBusiness() != null ? product.getBusiness().getId() : null);
+        }
+
+        // La operación conserva la moneda con la que se creó: asociarle un producto
+        // de otra moneda dejaría el detalle mostrando importes en la moneda equivocada.
+        // Sólo se compara cuando ambos registros tienen moneda (los legados no).
+        if (product != null && tieneMoneda(existingSale.getCurrency()) && tieneMoneda(product.getCurrency())
+                && !existingSale.getCurrency().trim().equalsIgnoreCase(product.getCurrency().trim())) {
+            throw new IllegalArgumentException("El producto está en " + product.getCurrency().trim().toUpperCase()
+                    + " y la operación en " + existingSale.getCurrency().trim().toUpperCase());
         }
 
         if (kind == SaleKind.VENTA && product != null) {
@@ -360,9 +492,40 @@ public class VentaServices implements IVentaServices {
             description = "Préstamo personal";
         }
 
+        // La variante puede cambiar en la edición: se devuelve el stock de la
+        // anterior y se descuenta el de la nueva. Los importes ya pactados no se
+        // tocan (el alta/edición no expone montos); sólo se actualiza el snapshot
+        // de precio y costo unitarios para el detalle.
+        int cantidad = existingSale.getQuantity() != null ? existingSale.getQuantity() : 1;
+        ProductVariant anterior = existingSale.getVariant();
+        boolean eraVenta = existingSale.getKind() == SaleKind.VENTA && anterior != null;
+        boolean seraVenta = kind == SaleKind.VENTA && variant != null;
+        boolean cambiaVariante = !seraVenta || anterior == null
+                ? eraVenta
+                : anterior.getId() == null || !anterior.getId().equals(variant.getId());
+
+        if (eraVenta && cambiaVariante) {
+            anterior.setStock(anterior.getStock() + cantidad);
+            variantRepository.save(anterior);
+        }
+        if (seraVenta && cambiaVariante) {
+            int disponible = variant.getStock() != null ? variant.getStock() : 0;
+            if (disponible < cantidad) {
+                throw new IllegalArgumentException(disponible == 0
+                        ? "No hay stock disponible de " + variant.getSku()
+                        : "Stock insuficiente de " + variant.getSku() + ": quedan " + disponible + " unidades");
+            }
+            variant.setStock(disponible - cantidad);
+            variantRepository.save(variant);
+        }
+
         existingSale.setKind(kind);
         existingSale.setProductType(productType);
-        existingSale.setProduct(product);
+        existingSale.setVariant(variant);
+        if (variant != null) {
+            existingSale.setUnitPrice(variant.getPrice());
+            existingSale.setCost(variant.getCost().multiply(BigDecimal.valueOf(cantidad)));
+        }
         existingSale.setDescriptionProduct(description);
 
         salesRepository.save(existingSale);
@@ -379,14 +542,13 @@ public class VentaServices implements IVentaServices {
         return 0;
     }
 
-    // método para sumar cuotas pagadas
+    // método para sumar lo cobrado en las cuotas de una venta
     public BigDecimal calculateTotalPaidFeesForSaleUsingStream(Sale sale) {
         if (sale == null || sale.getFees() == null) {
             return BigDecimal.ZERO;
         }
         return sale.getFees().stream()
-                .filter(fee -> fee.getPaid() != null && fee.getPaid())
-                .map(Fee::getAmount)
+                .map(Fee::getPaidAmount)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
@@ -412,7 +574,10 @@ public class VentaServices implements IVentaServices {
             year, month, day, status, aCobrar, clientName, descriptionProduct, productType, kind,
             typePayments, minAmount, maxAmount
         );
-        return salesRepository.findAll(spec, pageable).map(sale -> convertirAVentaResponseDTO(sale));
+        Page<SaleResponseDto> page = salesRepository.findAll(spec, pageable)
+                .map(sale -> convertirAVentaResponseDTO(sale));
+        adjuntarRemitos(page.getContent());
+        return page;
     }
 
     @Override
@@ -535,7 +700,43 @@ public class VentaServices implements IVentaServices {
         Sale sale = salesRepository.findById(id)
                 .orElseThrow(() -> new Exception("Sale not found"));
         TenantGuard.verificar(sale.getBusiness() != null ? sale.getBusiness().getId() : null);
-        return convertirAVentaResponseDTO(sale);
+        SaleResponseDto dto = convertirAVentaResponseDTO(sale);
+        adjuntarRemito(dto);
+        return dto;
+    }
+
+    /**
+     * Completa el resumen de remito de una venta. La consulta es una sola y se
+     * hace fuera del mapper para no acoplar el mapeo de ventas al repositorio.
+     */
+    private void adjuntarRemito(SaleResponseDto venta) {
+        if (venta == null || venta.getId() == null) {
+            return;
+        }
+        saleDocumentRepository.findBySaleIdAndType(venta.getId(), DocumentType.REMITO)
+                .ifPresent(document -> venta.setRemito(SaleDocumentMapper.aResumen(document)));
+    }
+
+    /** Versión por lote para el listado paginado (evita N+1). */
+    private void adjuntarRemitos(List<SaleResponseDto> ventas) {
+        List<Long> ids = new ArrayList<>();
+        for (SaleResponseDto venta : ventas) {
+            if (venta.getId() != null) {
+                ids.add(venta.getId());
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        Map<Long, SaleDocument> porVenta = new HashMap<>();
+        for (SaleDocument document : saleDocumentRepository.findBySaleIdInAndType(ids, DocumentType.REMITO)) {
+            if (document.getSale() != null) {
+                porVenta.put(document.getSale().getId(), document);
+            }
+        }
+        for (SaleResponseDto venta : ventas) {
+            venta.setRemito(SaleDocumentMapper.aResumen(porVenta.get(venta.getId())));
+        }
     }
 
     @Transactional
@@ -548,7 +749,7 @@ public class VentaServices implements IVentaServices {
         // Restricción (anular + eliminar restringido): una venta con pagos registrados
         // no se puede borrar físicamente; debe anularse para conservar el historial.
         boolean tienePagos = existingSale.getFees().stream()
-                .anyMatch(fee -> Boolean.TRUE.equals(fee.getPaid()));
+                .anyMatch(fee -> fee.getPaidAmount().signum() > 0);
         if (tienePagos) {
             throw new IllegalArgumentException("La venta tiene pagos registrados. Anúlala en lugar de eliminarla.");
         }
@@ -557,16 +758,36 @@ public class VentaServices implements IVentaServices {
             feeRepository.delete(fee);
         }
 
-        // Reponer stock (V9): si la venta tenía un producto con control de inventario,
-        // las unidades vendidas vuelven al catálogo al eliminar la venta.
-        Product productoVendido = existingSale.getProduct();
-        Integer cantidadVendida = existingSale.getQuantity() != null ? existingSale.getQuantity() : 1;
-        if (productoVendido != null && productoVendido.getStock() != null && cantidadVendida > 0) {
-            productoVendido.setStock(productoVendido.getStock() + cantidadVendida);
-            productRepository.save(productoVendido);
+        // Reponer stock (V9): las unidades vendidas vuelven al catálogo al eliminar
+        // la venta. Si ya estaba anulada, el stock se repuso al anular: no se toca
+        // de nuevo (antes se sumaba dos veces).
+        if (existingSale.getStatus() != SaleStatus.CANCELED) {
+            reponerStock(existingSale);
         }
 
+        // Los remitos son documentos de la venta: se eliminan con ella (la
+        // confirmación del frontend avisa cuál se va a borrar). Anular, en
+        // cambio, conserva los remitos ya emitidos.
+        saleDocumentRepository.deleteBySaleId(id);
+
         salesRepository.delete(existingSale);
+    }
+
+    /**
+     * Devuelve al stock las unidades de la variante vendida. No aplica a
+     * préstamos ni a registros sin variante (legados).
+     */
+    private void reponerStock(Sale sale) {
+        if (sale.getKind() != SaleKind.VENTA || sale.getVariant() == null) {
+            return;
+        }
+        ProductVariant variante = sale.getVariant();
+        int cantidad = sale.getQuantity() != null ? sale.getQuantity() : 1;
+        if (cantidad <= 0) {
+            return;
+        }
+        variante.setStock((variante.getStock() != null ? variante.getStock() : 0) + cantidad);
+        variantRepository.save(variante);
     }
 
     // Anula una venta o préstamo: conserva el registro con estado CANCELADO (queda
@@ -581,15 +802,16 @@ public class VentaServices implements IVentaServices {
         TenantGuard.verificar(sale.getBusiness() != null ? sale.getBusiness().getId() : null);
 
         if (sale.getStatus() == SaleStatus.CANCELED) {
-            return convertirAVentaResponseDTO(sale);
+            SaleResponseDto dto = convertirAVentaResponseDTO(sale);
+            adjuntarRemito(dto);
+            return dto;
         }
 
-        // Lo ya cobrado (cuotas pagadas). Las cuotas se conservan como historial del
-        // registro anulado. Si refund=true se registra como devolución al cliente;
-        // si refund=false el monto queda retenido por el negocio.
+        // Lo ya cobrado (cobros registrados en el log). Las cuotas se conservan como
+        // historial del registro anulado. Si refund=true se registra como devolución al
+        // cliente; si refund=false el monto queda retenido por el negocio.
         BigDecimal collected = sale.getFees().stream()
-                .filter(fee -> Boolean.TRUE.equals(fee.getPaid()))
-                .map(Fee::getAmount)
+                .map(Fee::getPaidAmount)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         sale.setRefundAmount(refund ? collected : BigDecimal.ZERO);
@@ -598,14 +820,11 @@ public class VentaServices implements IVentaServices {
         sale.setStatus(SaleStatus.CANCELED);
 
         // Reponer stock: mismas condiciones que el borrado físico.
-        Product productoVendido = sale.getProduct();
-        Integer cantidadVendida = sale.getQuantity() != null ? sale.getQuantity() : 1;
-        if (productoVendido != null && productoVendido.getStock() != null && cantidadVendida > 0) {
-            productoVendido.setStock(productoVendido.getStock() + cantidadVendida);
-            productRepository.save(productoVendido);
-        }
+        reponerStock(sale);
 
-        return convertirAVentaResponseDTO(salesRepository.save(sale));
+        SaleResponseDto dto = convertirAVentaResponseDTO(salesRepository.save(sale));
+        adjuntarRemito(dto);
+        return dto;
     }
 
 }

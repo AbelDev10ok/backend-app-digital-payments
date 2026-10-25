@@ -51,6 +51,7 @@ public class SaleMapper {
         dto.setRealFinalPayment(sale.getRealFinalDate());
         dto.setKind(sale.getKind());
         dto.setQuantity(sale.getQuantity());
+        dto.setCurrency(sale.getCurrency());
 
 
                 // Aquí está el cambio principal
@@ -63,15 +64,11 @@ public class SaleMapper {
             dto.setProductType(productTypeDto);
         }
 
-        if (sale.getProduct() != null) {
-            ProductDto productDto = new ProductDto(
-                sale.getProduct().getId(),
-                sale.getProduct().getName(),
-                sale.getProduct().getPrice(),
-                sale.getProduct().getStock(),
-                sale.getProduct().getProductType() != null ? sale.getProduct().getProductType().getId() : null,
-                sale.getProduct().getProductType() != null ? sale.getProduct().getProductType().getName() : null
-            );
+        if (sale.getVariant() != null) {
+            ProductDto productDto = ProductMapper.toDto(sale.getVariant().getProduct(), sale.getVariant());
+            productDto.setPrice(sale.getUnitPrice() != null
+                    ? sale.getUnitPrice()
+                    : productDto.getPrice());
             dto.setProduct(productDto);
         }
 
@@ -87,10 +84,9 @@ public class SaleMapper {
             .count();
         dto.setPaidFeesCount((int) paidFeesCount);
 
-        // Monto ya cobrado antes de la anulación (suma de cuotas pagadas)
+        // Monto ya cobrado (suma de los cobros registrados en las cuotas)
         BigDecimal collectedAmount = sale.getFees().stream()
-            .filter(Fee::getPaid)
-            .map(Fee::getAmount)
+            .map(Fee::getPaidAmount)
             .filter(Objects::nonNull)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
         dto.setCollectedAmount(collectedAmount);

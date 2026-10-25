@@ -12,8 +12,8 @@ public class SaleUpdateRequestDto {    @NonNull
     // Categoría de producto (solo obligatoria para VENTA)
     private Long productType;
 
-    // Producto del catálogo (opcional, solo VENTA)
-    private Long product;
+    // Variante/SKU vendido (opcional, solo VENTA)
+    private Long variant;
 
     @IValueOfEnum(enumClass = SaleKind.class, message = "El tipo de transacción debe ser VENTA o PRESTAMO")
     private String kind;
@@ -34,12 +34,12 @@ public class SaleUpdateRequestDto {    @NonNull
         this.productType = productType;
     }
 
-    public Long getProduct() {
-        return product;
+    public Long getVariant() {
+        return variant;
     }
 
-    public void setProduct(Long product) {
-        this.product = product;
+    public void setVariant(Long variant) {
+        this.variant = variant;
     }
 
     public String getKind() {

@@ -50,6 +50,13 @@ public class SaleResponseDto {
     // Monto devuelto al cliente al anular (0 si el monto cobrado se retiene)
     private BigDecimal refundAmount;
 
+    // Moneda (ISO 4217) congelada al crear la transacción (snapshot)
+    private String currency;
+
+    // Remito emitido (si existe). Se usa para mostrar el número y habilitar
+    // la reimpresión sin pedir el documento completo en cada fila.
+    private RemitoResumenDto remito;
+
 
 
 
@@ -212,6 +219,14 @@ public class SaleResponseDto {
         this.refundAmount = refundAmount;
     }
 
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
     public Integer getTotalFees() {
         return totalFees;
     }
@@ -275,5 +290,11 @@ public class SaleResponseDto {
         this.realFinalPayment = realFinalPayment;
     }
 
-    
+    public RemitoResumenDto getRemito() {
+        return remito;
+    }
+
+    public void setRemito(RemitoResumenDto remito) {
+        this.remito = remito;
+    }
 }

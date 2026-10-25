@@ -3,6 +3,7 @@ package com.app.digital.payments.digital_pyments.models;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import com.app.digital.payments.digital_pyments.utils.Payments;
@@ -22,6 +23,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import org.hibernate.annotations.Filter;
 
@@ -79,13 +81,19 @@ public class Sale{ // Ahora extiende PayableItem
     @JoinColumn(name = "product_type_id", nullable = true)
     private ProductType productType; // Categoría de producto (solo para VENTA)
 
+    // Variante/SKU vendido (opcional, solo VENTA). Una venta = un solo SKU.
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id", nullable = true)
-    private Product product; // Producto del catálogo (opcional, solo VENTA)
+    @JoinColumn(name = "product_variant_id", nullable = true)
+    private ProductVariant variant;
 
     // Cantidad de unidades del producto vendidas (V9). 1 por defecto; solo aplica a VENTA
     @Column(nullable = false)
     private Integer quantity = 1;
+
+    // Precio de venta unitario del catálogo al momento de la operación (snapshot).
+    // En cuotas el total financiado puede ser distinto: este valor es la referencia.
+    @Column(precision = 12, scale = 2)
+    private BigDecimal unitPrice;
 
     @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Fee> fees = new ArrayList<>(); // Lista de cuotas asociadas
@@ -101,6 +109,20 @@ public class Sale{ // Ahora extiende PayableItem
     @Column(nullable = false)
     private BigDecimal refundAmount = BigDecimal.ZERO; // campo para el monto del reembolso
 
+    // Moneda (ISO 4217) congelada al crear la transacción: el monto nunca se
+    // conviene, solo se etiqueta. Se asigna desde la config del negocio al crear
+    // y NO se edita después. Nullable-safe por esquema legado (la UI usa la
+    // moneda del negocio como respaldo si viniera nula).
+    @Column(name = "currency", length = 3)
+    private String currency;
+
+    // Bloqueo optimista: evita que dos cobros concurrentes sobre la misma venta
+    // descuenten el saldo dos veces (el segundo recibe 409 y puede reintentar).
+    // El default 0 permite agregar la columna sin reventar las filas existentes.
+    @Version
+    @Column(columnDefinition = "bigint default 0")
+    private Long version;
+
     public Sale() {
     }
 
@@ -115,6 +137,42 @@ public class Sale{ // Ahora extiende PayableItem
         } else {
             this.status = SaleStatus.ACTIVE;
         }
+    }
+
+    // El saldo es siempre "total menos lo efectivamente cobrado": se deriva de los
+    // cobros registrados en vez de arrastrarlo a mano, porque cada borrado o edicion
+    // de monto dejaba un numero sin relacion con la plata que entro (borrar una cuota
+    // impaga llegaba a perdonar deuda que nadie habia pagado).
+    public BigDecimal recalcularSaldo() {
+        BigDecimal total = priceTotal != null ? priceTotal : BigDecimal.ZERO;
+        BigDecimal cobrado = cuotas().stream()
+                .map(Fee::getPaidAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        this.remainingAmount = total.subtract(cobrado).max(BigDecimal.ZERO);
+        return this.remainingAmount;
+    }
+
+    // Cuota "proxima a cobrar": la impaga de menor numero. La transaccion tiene una
+    // sola cuota impaga a la vez (la siguiente se agenda al cobrar). Null si no
+    // queda nada por cobrar.
+    public Fee cuotaPendiente() {
+        return cuotas().stream()
+                .filter(fee -> !Boolean.TRUE.equals(fee.getPaid()))
+                .min(Comparator.comparing(Fee::getNumberFee, Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(null);
+    }
+
+    // Monto de la proxima cuota: el valor de cuota pactado, nunca el saldo entero
+    // (y nunca mas que la deuda). Con deuda de 125.000 y cuotas de 25.000, la
+    // proxima es de 25.000; si solo quedan 10.000, es de 10.000.
+    public BigDecimal montoProximaCuota() {
+        BigDecimal saldo = remainingAmount != null ? remainingAmount : BigDecimal.ZERO;
+        BigDecimal estandar = amountFee != null ? amountFee : saldo;
+        return estandar.min(saldo).max(BigDecimal.ZERO);
+    }
+
+    private List<Fee> cuotas() {
+        return fees != null ? fees : List.of();
     }
 
 
@@ -265,12 +323,20 @@ public class Sale{ // Ahora extiende PayableItem
         this.productType = productType;
     }
 
-    public Product getProduct() {
-        return product;
+    public ProductVariant getVariant() {
+        return variant;
     }
 
-    public void setProduct(Product product) {
-        this.product = product;
+    public void setVariant(ProductVariant variant) {
+        this.variant = variant;
+    }
+
+    public BigDecimal getUnitPrice() {
+        return unitPrice;
+    }
+
+    public void setUnitPrice(BigDecimal unitPrice) {
+        this.unitPrice = unitPrice;
     }
 
     public Integer getQuantity() {
@@ -312,6 +378,22 @@ public class Sale{ // Ahora extiende PayableItem
 
     public void setInterestRate(BigDecimal interestRate) {
         this.interestRate = interestRate;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 
 }

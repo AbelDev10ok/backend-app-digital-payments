@@ -10,7 +10,6 @@ import com.app.digital.payments.digital_pyments.utils.SaleKind;
 
 import io.micrometer.common.lang.NonNull;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 
 public class SaleRequestDto {
 
@@ -31,14 +30,14 @@ public class SaleRequestDto {
     @IValueOfEnum(enumClass = Payments.class, message = "El tipo de pago debe ser SEMANAL, QUINCENAL o MENSUAL o CONTADO")
     private String payments;
 
-    @Min(value = 1, message = "La cantidad de cuotas debe ser mayor a 0")
+    @Min(value = 0, message = "La cantidad de cuotas no puede ser negativa")
     private Integer quantityFees;
 
-    @NotNull(message = "El valor de la cuota no puede estar vacío")
+    // En VENTA el backend calcula el monto; en PRESTAMO es obligatorio.
     private BigDecimal amountFee;
 
-    @NotNull(message = "El costo no puede estar vacío")
-    private BigDecimal cost; // Costo del producto/servicio
+    // En VENTA el backend calcula el costo desde la variante; en PRESTAMO es obligatorio.
+    private BigDecimal cost;
 
     // Tasa de interés del préstamo (solo PRESTAMO, opcional)
     private BigDecimal interestRate;
@@ -58,12 +57,17 @@ public class SaleRequestDto {
     // Categoría de producto (solo obligatoria para VENTA)
     private Long productType;
 
-    // Producto del catálogo (opcional, solo VENTA)
-    private Long product;
+    // Variante/SKU vendido (obligatorio para VENTA)
+    private Long variant;
 
     // Cantidad de unidades vendidas (solo VENTA, opcional; por defecto 1)
     @Min(value = 1, message = "La cantidad debe ser mayor a 0")
     private Integer quantity;
+
+    // Moneda ISO 4217 elegida para un PRESTAMO (no tiene producto del que
+    // heredarla). En una VENTA la moneda la manda el producto y este campo solo
+    // puede repetirla: si la contradice, el alta se rechaza.
+    private String currency;
 
     public SaleRequestDto() {
     
@@ -173,12 +177,12 @@ public class SaleRequestDto {
         this.productType = productType;
     }
 
-    public Long getProduct() {
-        return product;
+    public Long getVariant() {
+        return variant;
     }
 
-    public void setProduct(Long product) {
-        this.product = product;
+    public void setVariant(Long variant) {
+        this.variant = variant;
     }
 
     public Integer getQuantity() {
@@ -187,6 +191,14 @@ public class SaleRequestDto {
 
     public void setQuantity(Integer quantity) {
         this.quantity = quantity;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 
     public String getKind() {
