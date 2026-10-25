@@ -11,6 +11,9 @@ public class BusinessMeDto {
 
     private Long id;
     private String name;
+    private String cuit;
+    private String address;
+    private String phone;
     private String currency;
     private BigDecimal defaultInterestRate;
     private String defaultPaymentFrequency;
@@ -36,6 +39,30 @@ public class BusinessMeDto {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getCuit() {
+        return cuit;
+    }
+
+    public void setCuit(String cuit) {
+        this.cuit = cuit;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
     }
 
     public String getCurrency() {

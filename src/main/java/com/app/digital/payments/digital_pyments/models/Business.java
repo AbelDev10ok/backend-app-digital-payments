@@ -26,6 +26,17 @@ public class Business {
     @Column(nullable = false)
     private String name;
 
+    // Datos opcionales que se imprimen en los remitos. Nunca bloquean la
+    // emision: si faltan, el documento sale sin esa linea.
+    @Column(length = 20)
+    private String cuit;
+
+    @Column(length = 255)
+    private String address;
+
+    @Column(length = 50)
+    private String phone;
+
     // Moneda de referencia del negocio (ISO 4217). Configuracion futura.
     @Column(nullable = false)
     private String currency = "ARS";
@@ -73,6 +84,30 @@ public class Business {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getCuit() {
+        return cuit;
+    }
+
+    public void setCuit(String cuit) {
+        this.cuit = cuit;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
     }
 
     public String getCurrency() {

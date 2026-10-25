@@ -9,6 +9,7 @@ import com.app.digital.payments.digital_pyments.models.Business;
 import com.app.digital.payments.digital_pyments.models.dtos.BusinessMeDto;
 import com.app.digital.payments.digital_pyments.models.dtos.BusinessUpdateRequestDto;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
+import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
 import com.app.digital.payments.digital_pyments.utils.Payments;
 import com.app.digital.payments.digital_pyments.utils.TenantContext;
 
@@ -38,8 +39,27 @@ public class BusinessServices {
         if (request.getName() != null && !request.getName().isBlank()) {
             business.setName(request.getName().trim());
         }
+        // Si el campo viene informado (aunque sea vacío), se actualiza: así el
+        // usuario puede borrar el CUIT, la dirección o el teléfono.
+        if (request.getCuit() != null) {
+            business.setCuit(limpiarOpcional(request.getCuit()));
+        }
+        if (request.getAddress() != null) {
+            business.setAddress(limpiarOpcional(request.getAddress()));
+        }
+        if (request.getPhone() != null) {
+            business.setPhone(limpiarOpcional(request.getPhone()));
+        }
         if (request.getCurrency() != null && !request.getCurrency().isBlank()) {
-            business.setCurrency(request.getCurrency().trim().toUpperCase());
+            String nueva = request.getCurrency().trim().toUpperCase();
+            // Solo se admiten las monedas soportadas, salvo que sea la que el
+            // negocio ya tiene (dato legado): así puede guardar el resto de los
+            // datos sin quedar trabado por una moneda que ya no se ofrece.
+            if (!CurrencyUtils.esSoportada(nueva)
+                    && !nueva.equals(CurrencyUtils.orDefault(business.getCurrency(), null))) {
+                throw new IllegalArgumentException("La moneda debe ser ARS o USD");
+            }
+            business.setCurrency(nueva);
         }
         // La tasa solo se actualiza si viene informada (null = no tocar)
         if (request.getDefaultInterestRate() != null) {
@@ -64,6 +84,9 @@ public class BusinessServices {
         BusinessMeDto dto = new BusinessMeDto();
         dto.setId(business.getId());
         dto.setName(business.getName());
+        dto.setCuit(business.getCuit());
+        dto.setAddress(business.getAddress());
+        dto.setPhone(business.getPhone());
         dto.setCurrency(business.getCurrency());
         BigDecimal rate = business.getDefaultInterestRate();
         dto.setDefaultInterestRate(rate);
@@ -73,5 +96,10 @@ public class BusinessServices {
         dto.setSubscriptionUntil(business.getSubscriptionUntil());
         dto.setCreatedAt(business.getCreatedAt() == null ? null : business.getCreatedAt().toLocalDate());
         return dto;
+    }
+
+    private String limpiarOpcional(String value) {
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

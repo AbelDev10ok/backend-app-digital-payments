@@ -89,16 +89,47 @@ class BusinessServicesTest {
 
         BusinessUpdateRequestDto request = new BusinessUpdateRequestDto();
         request.setName("Cobros del Sur");
-        request.setCurrency("pyg"); // se normaliza a mayusculas
+        request.setCurrency("usd"); // se normaliza a mayusculas
         request.setDefaultInterestRate(new BigDecimal("12.5"));
         request.setDefaultPaymentFrequency("mensual"); // se normaliza a MENSUAL
 
         BusinessMeDto dto = businessServices.updateMyBusiness(request);
 
         assertEquals("Cobros del Sur", business.getName());
-        assertEquals("PYG", business.getCurrency());
+        assertEquals("USD", business.getCurrency());
         assertEquals(new BigDecimal("12.5"), dto.getDefaultInterestRate());
         assertEquals("MENSUAL", dto.getDefaultPaymentFrequency());
         assertEquals("TRIAL", dto.getPlanStatus());
+    }
+
+    @Test
+    void updateMyBusinessRechazaUnaMonedaNoSoportada() {
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(business));
+
+        BusinessUpdateRequestDto request = new BusinessUpdateRequestDto();
+        request.setName("Cobros del Sur");
+        request.setCurrency("pyg");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> businessServices.updateMyBusiness(request));
+
+        assertEquals("La moneda debe ser ARS o USD", error.getMessage());
+        assertEquals("ARS", business.getCurrency()); // la moneda original no se toca
+    }
+
+    @Test
+    void updateMyBusinessPermiteConservarUnaMonedaLegadaSinCambiarla() {
+        business.setCurrency("PYG");
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(business));
+        when(businessRepository.save(any(Business.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BusinessUpdateRequestDto request = new BusinessUpdateRequestDto();
+        request.setName("Cobros del Sur");
+        request.setCurrency("PYG"); // es la que ya tiene: se acepta para no trabar el guardado
+
+        BusinessMeDto dto = businessServices.updateMyBusiness(request);
+
+        assertEquals("PYG", business.getCurrency());
+        assertEquals("Cobros del Sur", dto.getName());
     }
 }

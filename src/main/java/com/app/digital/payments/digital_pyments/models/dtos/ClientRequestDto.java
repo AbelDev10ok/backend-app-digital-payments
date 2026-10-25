@@ -15,7 +15,7 @@ public class ClientRequestDto {
     private String telefono;
     @Email(message = "El email debe tener un formato válido")
     private String email;
-    @Size(max = 20, message = "La dirección no puede exceder los 20 caracteres")
+    @Size(max = 120, message = "La dirección no puede exceder los 120 caracteres")
     private String direccion;
 
     // validar dni unico

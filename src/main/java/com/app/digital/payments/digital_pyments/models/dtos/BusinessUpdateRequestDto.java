@@ -21,6 +21,17 @@ public class BusinessUpdateRequestDto {
     @Size(max = 255, message = "El nombre no puede superar los 255 caracteres")
     private String name;
 
+    // Datos opcionales que se imprimen en los remitos. El CUIT se valida con
+    // una regla básica (11 dígitos); nunca bloquea la emisión de un remito.
+    @Pattern(regexp = "^$|^[0-9]{11}$", message = "El CUIT debe tener 11 dígitos")
+    private String cuit;
+
+    @Size(max = 255, message = "La dirección no puede superar los 255 caracteres")
+    private String address;
+
+    @Size(max = 50, message = "El teléfono no puede superar los 50 caracteres")
+    private String phone;
+
     // Moneda ISO 4217 (ej: ARS, USD, PYG)
     @Pattern(regexp = "^[A-Za-z]{3}$", message = "La moneda debe ser un codigo ISO de 3 letras")
     private String currency;
@@ -40,6 +51,30 @@ public class BusinessUpdateRequestDto {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getCuit() {
+        return cuit;
+    }
+
+    public void setCuit(String cuit) {
+        this.cuit = cuit;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
     }
 
     public String getCurrency() {
