@@ -21,8 +21,13 @@ public class ProductDto {
     private BigDecimal cost;
     private Integer stock;
     private String barcode;
+    // Fila vendible: true solo si el producto base Y la variante estan activos.
     private Boolean active;
+    // Estado del producto base, para la gestion del catalogo.
     private Boolean productActive;
+    // Estado propio de la variante (sin combinar con el producto): el formulario
+    // de edicion lo usa para no pisarlo cuando se activa o desactiva el producto.
+    private Boolean variantActive;
     private Long productTypeId;
     private String productTypeName;
 
@@ -135,6 +140,14 @@ public class ProductDto {
 
     public void setProductActive(Boolean productActive) {
         this.productActive = productActive;
+    }
+
+    public Boolean getVariantActive() {
+        return variantActive;
+    }
+
+    public void setVariantActive(Boolean variantActive) {
+        this.variantActive = variantActive;
     }
 
     public Long getProductTypeId() {

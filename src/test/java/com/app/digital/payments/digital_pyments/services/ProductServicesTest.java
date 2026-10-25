@@ -698,6 +698,30 @@ class ProductServicesTest {
     }
 
     @Test
+    void getAllProductsDistingueElEstadoDelProductoYDeLaVariante() {
+        ProductVariant activa = variante(1L, "REM-ROJO", "100", "200", 2);
+        Product inactivo = productoConVariante(5L, "Remera", activa);
+        inactivo.setActive(false);
+        when(productRepository.findAll()).thenReturn(List.of(inactivo));
+
+        // Producto inactivo con la variante activa: la fila no se vende, pero el
+        // estado propio de la variante se conserva para el formulario de edicion.
+        ProductDto fila = productServices.getAllProducts().get(0);
+        assertFalse(fila.getActive());
+        assertFalse(fila.getProductActive());
+        assertTrue(fila.getVariantActive());
+
+        // Caso inverso: producto activo con la variante desactivada.
+        inactivo.setActive(true);
+        activa.setActive(false);
+
+        ProductDto otra = productServices.getAllProducts().get(0);
+        assertFalse(otra.getActive());
+        assertTrue(otra.getProductActive());
+        assertFalse(otra.getVariantActive());
+    }
+
+    @Test
     void deleteProductInexistenteDevuelveFalse() {
         when(productRepository.findById(5L)).thenReturn(Optional.empty());
         assertFalse(productServices.deleteProduct(5L));

@@ -38,6 +38,7 @@ public final class ProductMapper {
         dto.setBarcode(variant.getBarcode());
         dto.setActive(Boolean.TRUE.equals(variant.getActive()) && Boolean.TRUE.equals(product.getActive()));
         dto.setProductActive(product.getActive());
+        dto.setVariantActive(variant.getActive());
         dto.setCurrency(product.getCurrency());
 
         if (product.getProductType() != null) {
