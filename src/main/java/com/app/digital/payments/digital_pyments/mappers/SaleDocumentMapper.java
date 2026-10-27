@@ -40,6 +40,11 @@ public final class SaleDocumentMapper {
         dto.setIssuedAt(document.getIssuedAt());
         dto.setSaleId(document.getSale() != null ? document.getSale().getId() : null);
         dto.setSaleDate(document.getSaleDate());
+        // El estado es el vivo de la venta (no del snapshot): la vista imprimible
+        // marca "ANULADO" cuando la venta se anuló después de emitir el documento.
+        dto.setSaleStatus(document.getSale() != null && document.getSale().getStatus() != null
+                ? document.getSale().getStatus().name()
+                : null);
 
         dto.setBusinessName(document.getBusinessName());
         dto.setBusinessAddress(document.getBusinessAddress());

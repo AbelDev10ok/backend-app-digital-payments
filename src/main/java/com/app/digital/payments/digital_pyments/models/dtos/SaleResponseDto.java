@@ -2,6 +2,7 @@ package com.app.digital.payments.digital_pyments.models.dtos;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import com.app.digital.payments.digital_pyments.utils.Payments;
@@ -49,6 +50,11 @@ public class SaleResponseDto {
 
     // Monto devuelto al cliente al anular (0 si el monto cobrado se retiene)
     private BigDecimal refundAmount;
+
+    // Auditoría de la anulación (fecha, usuario y motivo). Null si la venta no se anuló.
+    private LocalDateTime canceledAt;
+    private String canceledBy;
+    private String cancelReason;
 
     // Moneda (ISO 4217) congelada al crear la transacción (snapshot)
     private String currency;
@@ -217,6 +223,30 @@ public class SaleResponseDto {
 
     public void setRefundAmount(BigDecimal refundAmount) {
         this.refundAmount = refundAmount;
+    }
+
+    public LocalDateTime getCanceledAt() {
+        return canceledAt;
+    }
+
+    public void setCanceledAt(LocalDateTime canceledAt) {
+        this.canceledAt = canceledAt;
+    }
+
+    public String getCanceledBy() {
+        return canceledBy;
+    }
+
+    public void setCanceledBy(String canceledBy) {
+        this.canceledBy = canceledBy;
+    }
+
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
+    public void setCancelReason(String cancelReason) {
+        this.cancelReason = cancelReason;
     }
 
     public String getCurrency() {

@@ -138,27 +138,26 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     @Query("SELECT SUM(s.priceTotal - s.refundAmount) FROM Sale s WHERE s.status != 'CANCELED' AND s.kind = :kind AND DATE(s.dateCreation) = :date")
     Optional<BigDecimal> findTotalSalesAmountByDate(@Param("date") LocalDate date, @Param("kind") SaleKind kind);
 
-    // Monto total cobrado (cobros registrados) de productos por año, excluyendo tipo y CANCELADAS.
-    // Se suma el log de pagos por fecha de cobro (una cuota puede tener varios pagos).
+    // Monto total cobrado (cobros registrados) por año: el log de pagos por fecha
+    // de cobro (una cuota puede tener varios pagos). El dinero cuenta cuando entra,
+    // aunque la venta se anule después; los reembolsos van por su propia fecha.
     @Query("SELECT SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) " +
-            "AND YEAR(p.paidAt) = :year")
+            "WHERE YEAR(p.paidAt) = :year")
     Optional<BigDecimal> findTotalCollectedAmountByYear(@Param("year") int year);
 
     @Query("SELECT SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) AND s.kind = :kind " +
+            "WHERE s.kind = :kind " +
             "AND YEAR(p.paidAt) = :year")
     Optional<BigDecimal> findTotalCollectedAmountByYear(@Param("year") int year, @Param("kind") SaleKind kind);
 
-    // Monto total cobrado (cobros registrados) por mes y año, excluyendo tipo y CANCELADAS
+    // Monto total cobrado (cobros registrados) por mes y año
     @Query("SELECT SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) " +
-            "AND MONTH(p.paidAt) = :month " +
+            "WHERE MONTH(p.paidAt) = :month " +
             "AND YEAR(p.paidAt) = :year")
     Optional<BigDecimal> findTotalCollectedAmountByMonthAndYear(@Param("month") int month, @Param("year") int year);
 
     @Query("SELECT SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) AND s.kind = :kind " +
+            "WHERE s.kind = :kind " +
             "AND MONTH(p.paidAt) = :month " +
             "AND YEAR(p.paidAt) = :year")
     Optional<BigDecimal> findTotalCollectedAmountByMonthAndYear(@Param("month") int month, @Param("year") int year, @Param("kind") SaleKind kind);
@@ -178,11 +177,14 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     Optional<BigDecimal> findTotalProfitByYear(@Param("year") int year, @Param("kind") SaleKind kind);
 
     // OBTENER EL MONTO TOTAL DE REEMBOLSOS DE UN AÑO ESPECÍFICO (de transacciones de otro tipo)
-    @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND s.kind != :kind AND YEAR(s.dateCreation) = :year")
+    // Los reembolsos se reportan por la fecha en que se anularon (refundAt): la plata
+    // salió ese mes, no el de la venta. COALESCE cubre los registros anteriores a la
+    // columna, que se siguen reportando por la fecha de creación como antes.
+    @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND s.kind != :kind AND YEAR(COALESCE(s.refundAt, s.dateCreation)) = :year")
     Optional<BigDecimal> findTotalRefundsByYear(@Param("year") int year, @Param("kind") SaleKind kind);
 
     // Y para el mes:
-    @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND s.kind != :kind AND MONTH(s.dateCreation) = :month AND YEAR(s.dateCreation) = :year")
+    @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND s.kind != :kind AND MONTH(COALESCE(s.refundAt, s.dateCreation)) = :month AND YEAR(COALESCE(s.refundAt, s.dateCreation)) = :year")
     Optional<BigDecimal> findTotalRefundsByMonthAndYear(@Param("month") int month, @Param("year") int year, @Param("kind") SaleKind kind);
 
     // VENTAS CON CUOTAS VENCIDAS O POR VENCER HOY
@@ -221,7 +223,7 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
 
     // Serie mensual de cobrado (log de pagos) desde una fecha
     @Query("SELECT YEAR(p.paidAt), MONTH(p.paidAt), SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) AND p.paidAt >= :since " +
+            "WHERE p.paidAt >= :since " +
             "GROUP BY YEAR(p.paidAt), MONTH(p.paidAt) ORDER BY YEAR(p.paidAt), MONTH(p.paidAt)")
     List<Object[]> findMonthlyCollectedSeries(@Param("since") LocalDateTime since);
 
@@ -233,7 +235,7 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
 
     // Monto cobrado por cliente en un año (log de pagos)
     @Query("SELECT s.client.id, SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) AND YEAR(p.paidAt) = :year " +
+            "WHERE YEAR(p.paidAt) = :year " +
             "GROUP BY s.client.id")
     List<Object[]> findCollectedAmountByClientInYear(@Param("year") int year);
 
@@ -258,11 +260,11 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     Optional<BigDecimal> sumRemainingAmountByStatusAndMonthYear(@Param("status") SaleStatus status, @Param("year") int year, @Param("month") int month);
 
     // Reembolsos totales de un mes/año (sin filtro de tipo de transacción)
-    @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND YEAR(s.dateCreation) = :year AND MONTH(s.dateCreation) = :month")
+    @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND YEAR(COALESCE(s.refundAt, s.dateCreation)) = :year AND MONTH(COALESCE(s.refundAt, s.dateCreation)) = :month")
     Optional<BigDecimal> findTotalRefundsByMonthAndYear(@Param("month") int month, @Param("year") int year);
 
     // Reembolsos totales de un año (sin filtro de tipo de transacción)
-    @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND YEAR(s.dateCreation) = :year")
+    @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND YEAR(COALESCE(s.refundAt, s.dateCreation)) = :year")
     Optional<BigDecimal> findTotalRefundsByYear(@Param("year") int year);
 
     // ----- Consultas agrupadas por moneda -----
@@ -276,8 +278,7 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     List<Object[]> findTotalSalesAmountByMonthAndYearGrouped(@Param("month") int month, @Param("year") int year);
 
     @Query("SELECT s.currency, SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) " +
-            "AND MONTH(p.paidAt) = :month AND YEAR(p.paidAt) = :year " +
+            "WHERE MONTH(p.paidAt) = :month AND YEAR(p.paidAt) = :year " +
             "GROUP BY s.currency")
     List<Object[]> findTotalCollectedAmountByMonthAndYearGrouped(@Param("month") int month, @Param("year") int year);
 
@@ -286,8 +287,12 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
             "GROUP BY s.currency")
     List<Object[]> findTotalProfitByMonthAndYearGrouped(@Param("month") int month, @Param("year") int year);
 
+    // Los reembolsos van por la fecha de anulación (refundAt): COALESCE cubre los
+    // registros anteriores a esa columna, que siguen reportándose por creación.
     @Query("SELECT s.currency, SUM(s.refundAmount) FROM Sale s " +
-            "WHERE s.status = 'CANCELED' AND YEAR(s.dateCreation) = :year AND MONTH(s.dateCreation) = :month " +
+            "WHERE s.status = 'CANCELED' " +
+            "AND YEAR(COALESCE(s.refundAt, s.dateCreation)) = :year " +
+            "AND MONTH(COALESCE(s.refundAt, s.dateCreation)) = :month " +
             "GROUP BY s.currency")
     List<Object[]> findTotalRefundsByMonthAndYearGrouped(@Param("month") int month, @Param("year") int year);
 
@@ -309,8 +314,7 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     List<Object[]> findTotalSalesAmountByYearGrouped(@Param("year") int year);
 
     @Query("SELECT s.currency, SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) " +
-            "AND YEAR(p.paidAt) = :year GROUP BY s.currency")
+            "WHERE YEAR(p.paidAt) = :year GROUP BY s.currency")
     List<Object[]> findTotalCollectedAmountByYearGrouped(@Param("year") int year);
 
     @Query("SELECT s.currency, SUM(s.priceTotal - s.cost - s.refundAmount) FROM Sale s " +
@@ -325,8 +329,7 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     List<Object[]> findMonthlySalesSeriesGrouped(@Param("since") LocalDate since);
 
     @Query("SELECT YEAR(p.paidAt), MONTH(p.paidAt), s.currency, SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) " +
-            "AND p.paidAt >= :since " +
+            "WHERE p.paidAt >= :since " +
             "GROUP BY YEAR(p.paidAt), MONTH(p.paidAt), s.currency " +
             "ORDER BY YEAR(p.paidAt), MONTH(p.paidAt)")
     List<Object[]> findMonthlyCollectedSeriesGrouped(@Param("since") LocalDateTime since);
@@ -339,8 +342,7 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     List<Object[]> findTopClientsByYearGrouped(@Param("year") int year);
 
     @Query("SELECT s.client.id, s.currency, SUM(p.amount) FROM Payment p JOIN p.fee f JOIN f.sale s " +
-            "WHERE (s.status != 'CANCELED' OR (s.status = 'CANCELED' AND s.refundAmount = 0)) " +
-            "AND YEAR(p.paidAt) = :year GROUP BY s.client.id, s.currency")
+            "WHERE YEAR(p.paidAt) = :year GROUP BY s.client.id, s.currency")
     List<Object[]> findCollectedAmountByClientInYearGrouped(@Param("year") int year);
 
     @Query("SELECT s.currency, COUNT(f), SUM(" + QueryFragments.MONTO_EFECTIVO_CUOTA + ") " +

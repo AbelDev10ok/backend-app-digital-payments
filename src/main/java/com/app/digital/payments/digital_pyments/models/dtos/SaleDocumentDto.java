@@ -22,6 +22,9 @@ public class SaleDocumentDto {
     private Long saleId;
     private LocalDate saleDate;
 
+    /** Estado vivo de la venta ("CANCELED" si está anulada); no forma parte del snapshot. */
+    private String saleStatus;
+
     private String businessName;
     private String businessAddress;
     private String businessTaxId;
@@ -97,6 +100,14 @@ public class SaleDocumentDto {
 
     public void setSaleDate(LocalDate saleDate) {
         this.saleDate = saleDate;
+    }
+
+    public String getSaleStatus() {
+        return saleStatus;
+    }
+
+    public void setSaleStatus(String saleStatus) {
+        this.saleStatus = saleStatus;
     }
 
     public String getBusinessName() {

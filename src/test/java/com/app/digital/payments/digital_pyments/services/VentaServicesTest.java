@@ -1,6 +1,8 @@
 package com.app.digital.payments.digital_pyments.services;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,6 +22,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.app.digital.payments.digital_pyments.models.Business;
 import com.app.digital.payments.digital_pyments.models.Client;
@@ -28,6 +32,8 @@ import com.app.digital.payments.digital_pyments.models.Product;
 import com.app.digital.payments.digital_pyments.models.ProductType;
 import com.app.digital.payments.digital_pyments.models.ProductVariant;
 import com.app.digital.payments.digital_pyments.models.Sale;
+import com.app.digital.payments.digital_pyments.models.SaleDocument;
+import com.app.digital.payments.digital_pyments.models.Usuario;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleRequestDto;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleUpdateRequestDto;
@@ -38,6 +44,7 @@ import com.app.digital.payments.digital_pyments.repositories.IProductTypeReposit
 import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleDocumentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
+import com.app.digital.payments.digital_pyments.utils.DocumentType;
 import com.app.digital.payments.digital_pyments.utils.Payments;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
@@ -79,6 +86,7 @@ class VentaServicesTest {
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+        SecurityContextHolder.clearContext();
     }
 
     private SaleRequestDto dtoVenta(String kindName, String descripcion) {
@@ -1121,7 +1129,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true, null);
 
         assertEquals(SaleStatus.CANCELED.name(), result.getStatus());
         verify(salesRepository).save(sale);
@@ -1136,7 +1144,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ventaServices.cancelVenta(1L, true, true);
+        ventaServices.cancelVenta(1L, true, true, null);
 
         assertEquals(10, variant.getStock());
         verify(variantRepository).save(variant);
@@ -1154,7 +1162,7 @@ class VentaServicesTest {
 
         // El producto no volvió: la anulación no toca el stock, pero la
         // devolución del monto cobrado se asienta igual.
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true, false);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, false, null);
 
         assertEquals(7, variant.getStock());
         verify(variantRepository, never()).save(any(ProductVariant.class));
@@ -1171,7 +1179,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
 
         assertThrows(IllegalArgumentException.class,
-                () -> ventaServices.cancelVenta(1L, false, true));
+                () -> ventaServices.cancelVenta(1L, false, true, null));
 
         verify(salesRepository, never()).save(any(Sale.class));
         verify(variantRepository, never()).save(any(ProductVariant.class));
@@ -1183,7 +1191,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
 
         assertThrows(IllegalArgumentException.class,
-                () -> ventaServices.cancelVenta(1L, false, true));
+                () -> ventaServices.cancelVenta(1L, false, true, null));
 
         verify(salesRepository, never()).save(any(Sale.class));
     }
@@ -1198,7 +1206,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ventaServices.cancelVenta(1L, true, true);
+        ventaServices.cancelVenta(1L, true, true, null);
 
         ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
         verify(salesRepository).save(captor.capture());
@@ -1219,7 +1227,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true, null);
 
         assertEquals(0, new BigDecimal("100").compareTo(result.getRefundAmount()));
         assertEquals(0, new BigDecimal("100").compareTo(result.getCollectedAmount()));
@@ -1237,7 +1245,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, false, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, false, true, null);
 
         ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
         verify(salesRepository).save(captor.capture());
@@ -1259,7 +1267,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, false, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, false, true, null);
 
         // Sin devolución y sin deuda pendiente: el registro anulado no aporta a la
         // deuda del cliente (remaining = 0) ni a los reembolsos (refundAmount = 0).
@@ -1277,7 +1285,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true, null);
 
         assertEquals(0, result.getRefundAmount().signum());
         assertEquals(0, new BigDecimal("0").compareTo(result.getCollectedAmount()));
@@ -1293,7 +1301,7 @@ class VentaServicesTest {
         sale.setStatus(SaleStatus.CANCELED);
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true, null);
 
         assertEquals(SaleStatus.CANCELED.name(), result.getStatus());
         verify(salesRepository, never()).save(any(Sale.class));
@@ -1325,6 +1333,66 @@ class VentaServicesTest {
 
         assertThrows(IllegalStateException.class,
                 () -> ventaServices.markPrestamoAsCompleted(1L, new BigDecimal("100")));
+    }
+
+    @Test
+    void cancelVentaRegistraAuditoriaYFechaDeDevolucion() throws Exception {
+        ProductVariant variant = new ProductVariant();
+        variant.setId(5L);
+        variant.setStock(7);
+        Sale sale = ventaParaAnular(new BigDecimal("150"), variant,
+                List.of(cuotaPaga(new BigDecimal("100")), cuotaImpaga(new BigDecimal("50"))));
+        when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
+        when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Usuario usuario = new Usuario();
+        usuario.setEmail("duena@negocio.com");
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(usuario, null, List.of()));
+
+        ventaServices.cancelVenta(1L, true, true, "  El cliente devolvio el producto  ");
+
+        // La auditoría guarda fecha, usuario y el motivo sin espacios al borde
+        assertNotNull(sale.getCanceledAt());
+        assertEquals("duena@negocio.com", sale.getCanceledBy());
+        assertEquals("El cliente devolvio el producto", sale.getCancelReason());
+        // Y la devolución queda fechada el día en que se anuló
+        assertEquals(LocalDate.now(), sale.getRefundAt());
+    }
+
+    @Test
+    void cancelVentaSinDevolucionNoFechaElReembolso() throws Exception {
+        ProductVariant variant = new ProductVariant();
+        variant.setId(5L);
+        variant.setStock(7);
+        Sale sale = ventaParaAnular(new BigDecimal("150"), variant,
+                List.of(cuotaPaga(new BigDecimal("100")), cuotaImpaga(new BigDecimal("50"))));
+        when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
+        when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SaleResponseDto result = ventaServices.cancelVenta(1L, false, false, null);
+
+        assertEquals(0, result.getRefundAmount().signum());
+        assertNull(sale.getRefundAt());
+        assertNull(sale.getCancelReason());
+    }
+
+    @Test
+    void deleteVentaRechazaSiTieneRemitoEmitido() {
+        Sale sale = new Sale();
+        sale.setId(1L);
+        Business business = new Business();
+        business.setId(1L);
+        sale.setBusiness(business);
+        sale.setKind(SaleKind.VENTA);
+        sale.setFees(new java.util.ArrayList<>());
+        when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
+        when(saleDocumentRepository.findBySaleIdAndType(1L, DocumentType.REMITO))
+                .thenReturn(Optional.of(new SaleDocument()));
+
+        assertThrows(IllegalArgumentException.class, () -> ventaServices.deleteVenta(1L));
+
+        verify(salesRepository, never()).delete(any(Sale.class));
     }
 
     @Test

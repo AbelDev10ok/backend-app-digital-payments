@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.criteria.Join;
@@ -33,6 +34,7 @@ import com.app.digital.payments.digital_pyments.models.ProductType;
 import com.app.digital.payments.digital_pyments.models.ProductVariant;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.SaleDocument;
+import com.app.digital.payments.digital_pyments.models.Usuario;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleRequestDto;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.SaleUpdateRequestDto;
@@ -755,8 +757,17 @@ public class VentaServices implements IVentaServices {
                 .orElseThrow(() -> new Exception("Sale not found"));
         TenantGuard.verificar(existingSale.getBusiness() != null ? existingSale.getBusiness().getId() : null);
 
-        // Restricción (anular + eliminar restringido): una venta con pagos registrados
-        // no se puede borrar físicamente; debe anularse para conservar el historial.
+        // Un remito emitido puede estar en manos del cliente y su número es
+        // correlativo por negocio: la venta se anula en lugar de borrarse para no
+        // dejar un comprobante huérfano ni liberar su número.
+        boolean tieneRemito = saleDocumentRepository
+                .findBySaleIdAndType(id, DocumentType.REMITO).isPresent();
+        if (tieneRemito) {
+            throw new IllegalArgumentException("La venta tiene un remito emitido. Anúlala en lugar de eliminarla.");
+        }
+
+        // Una venta con pagos registrados no se puede borrar físicamente; debe
+        // anularse para conservar el historial del dinero que entró.
         boolean tienePagos = existingSale.getFees().stream()
                 .anyMatch(fee -> fee.getPaidAmount().signum() > 0);
         if (tienePagos) {
@@ -774,9 +785,8 @@ public class VentaServices implements IVentaServices {
             reponerStock(existingSale);
         }
 
-        // Los remitos son documentos de la venta: se eliminan con ella (la
-        // confirmación del frontend avisa cuál se va a borrar). Anular, en
-        // cambio, conserva los remitos ya emitidos.
+        // Limpieza defensiva: si algún documento quedó (p. ej. de otro tipo), se
+        // borra junto con la venta para no dejar huérfanos.
         saleDocumentRepository.deleteBySaleId(id);
 
         salesRepository.delete(existingSale);
@@ -806,14 +816,15 @@ public class VentaServices implements IVentaServices {
     //    registra ninguna devolución).
     //  - restock=true: devuelve las unidades al stock (sólo venta con producto); si
     //    false el inventario no se toca, y el borrado posterior tampoco lo repone.
+    // Queda registrada la auditoría de la anulación: fecha, usuario y motivo.
     @Transactional
     @Override
-    public SaleResponseDto cancelVenta(Long id, boolean refund, boolean restock) throws Exception {
+    public SaleResponseDto cancelVenta(Long id, boolean refund, boolean restock, String reason) throws Exception {
         Sale sale = salesRepository.findById(id)
                 .orElseThrow(() -> new Exception("Sale not found"));
         TenantGuard.verificar(sale.getBusiness() != null ? sale.getBusiness().getId() : null);
 
-        // Ya anulada: idempotente. No vuelve a tocar stock ni devoluciones.
+        // Ya anulada: idempotente. No vuelve a tocar stock, devoluciones ni auditoría.
         if (sale.getStatus() == SaleStatus.CANCELED) {
             SaleResponseDto dto = convertirAVentaResponseDTO(sale);
             adjuntarRemito(dto);
@@ -831,9 +842,17 @@ public class VentaServices implements IVentaServices {
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         sale.setRefundAmount(refund ? collected : BigDecimal.ZERO);
+        // La devolución se fecha al anular: los reportes la ubican en el mes en que
+        // salió la plata, no en el de la venta.
+        sale.setRefundAt(refund && collected.signum() > 0 ? LocalDate.now() : null);
         sale.setRemainingAmount(BigDecimal.ZERO);
         sale.setRealFinalDate(LocalDate.now());
         sale.setStatus(SaleStatus.CANCELED);
+
+        // Auditoría: quién anuló, cuándo y por qué (el motivo es opcional).
+        sale.setCanceledAt(LocalDateTime.now());
+        sale.setCanceledBy(usuarioActual());
+        sale.setCancelReason(limpiarTexto(reason));
 
         if (restock) {
             reponerStock(sale);
@@ -842,6 +861,28 @@ public class VentaServices implements IVentaServices {
         SaleResponseDto dto = convertirAVentaResponseDTO(salesRepository.save(sale));
         adjuntarRemito(dto);
         return dto;
+    }
+
+    /** Email del usuario autenticado, o null si no hay sesión (tests o datos legados). */
+    private static String usuarioActual() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof Usuario usuario) {
+            return usuario.getEmail();
+        }
+        return null;
+    }
+
+    /** Texto sin espacios al borde; null si queda vacío. */
+    private static String limpiarTexto(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
 }

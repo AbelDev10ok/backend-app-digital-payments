@@ -94,6 +94,11 @@ public class SaleMapper {
         // Lo devuelto al cliente al anular (0 si el monto cobrado se retiene)
         dto.setRefundAmount(sale.getRefundAmount() != null ? sale.getRefundAmount() : BigDecimal.ZERO);
 
+        // Auditoría de la anulación (fecha, usuario y motivo), si la venta se anuló
+        dto.setCanceledAt(sale.getCanceledAt());
+        dto.setCanceledBy(sale.getCanceledBy());
+        dto.setCancelReason(sale.getCancelReason());
+
         return dto;
     }
 }

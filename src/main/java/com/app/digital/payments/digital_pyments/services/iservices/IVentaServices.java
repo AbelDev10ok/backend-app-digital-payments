@@ -18,7 +18,7 @@ public interface IVentaServices {
     SaleResponseDto createVenta(SaleRequestDto saleDto) throws Exception;
     SaleResponseDto getSaleById(Long id) throws Exception;
     void deleteVenta(Long id) throws Exception;
-    SaleResponseDto cancelVenta(Long id, boolean refund, boolean restock) throws Exception;
+    SaleResponseDto cancelVenta(Long id, boolean refund, boolean restock, String reason) throws Exception;
     Page<SaleResponseDto> getAllVentasPaginacion(
         Pageable pageable,
         Integer year,

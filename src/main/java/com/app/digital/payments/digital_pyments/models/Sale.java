@@ -2,6 +2,7 @@ package com.app.digital.payments.digital_pyments.models;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -108,6 +109,20 @@ public class Sale{ // Ahora extiende PayableItem
 
     @Column(nullable = false)
     private BigDecimal refundAmount = BigDecimal.ZERO; // campo para el monto del reembolso
+
+    // Fecha en que se anuló y se asentó la devolución (si hubo). Los reportes de
+    // reembolsos usan esta fecha, no la de la venta: la plata salió al anular.
+    private LocalDate refundAt;
+
+    // Auditoría de la anulación: cuándo, quién y por qué (el motivo es opcional).
+    @Column(name = "canceled_at")
+    private LocalDateTime canceledAt;
+
+    @Column(name = "canceled_by", length = 120)
+    private String canceledBy;
+
+    @Column(name = "cancel_reason", length = 300)
+    private String cancelReason;
 
     // Moneda (ISO 4217) congelada al crear la transacción: el monto nunca se
     // conviene, solo se etiqueta. Se asigna desde la config del negocio al crear
@@ -370,6 +385,38 @@ public class Sale{ // Ahora extiende PayableItem
         return refundAmount;
     }    public void setRefundAmount(BigDecimal refundAmount) {
         this.refundAmount = refundAmount;
+    }
+
+    public LocalDate getRefundAt() {
+        return refundAt;
+    }
+
+    public void setRefundAt(LocalDate refundAt) {
+        this.refundAt = refundAt;
+    }
+
+    public LocalDateTime getCanceledAt() {
+        return canceledAt;
+    }
+
+    public void setCanceledAt(LocalDateTime canceledAt) {
+        this.canceledAt = canceledAt;
+    }
+
+    public String getCanceledBy() {
+        return canceledBy;
+    }
+
+    public void setCanceledBy(String canceledBy) {
+        this.canceledBy = canceledBy;
+    }
+
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
+    public void setCancelReason(String cancelReason) {
+        this.cancelReason = cancelReason;
     }
 
     public BigDecimal getInterestRate() {
