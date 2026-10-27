@@ -55,6 +55,11 @@ public class FeeServices implements IFeeServices {
         Fee fee = getFeeById(feeId);
         Sale sale = fee.getSale();
 
+        // Una venta anulada es terminal: sus cuotas ya no se eliminan.
+        if (sale.getStatus() == SaleStatus.CANCELED) {
+            throw new IllegalStateException("No se puede eliminar una cuota de una venta anulada");
+        }
+
         if (sale.getFees().size() == 1 && sale.getFees().contains(fee)) {
             throw new IllegalArgumentException("No se puede eliminar la única cuota de una venta. Elimine la venta completa si es necesario.");
         }
@@ -104,6 +109,11 @@ public class FeeServices implements IFeeServices {
     public FeeDto registerPayment(Long feeId, BigDecimal amount, LocalDate date, String paymentMethod) {
         Fee fee = getFeeById(feeId);
         Sale sale = fee.getSale();
+
+        // Una venta anulada es terminal: no se le registran cobros nuevos.
+        if (sale.getStatus() == SaleStatus.CANCELED) {
+            throw new IllegalStateException("No se puede cobrar una cuota de una venta anulada");
+        }
 
         PaymentMethod pm = parsearMetodoPago(paymentMethod);
 
@@ -171,6 +181,11 @@ public class FeeServices implements IFeeServices {
 
         Fee fee = getFeeById(feeId);
         Sale sale = fee.getSale();
+
+        // Una venta anulada es terminal: sus cuotas ya no se modifican.
+        if (sale.getStatus() == SaleStatus.CANCELED) {
+            throw new IllegalStateException("No se puede modificar una cuota de una venta anulada");
+        }
 
         // Saldo real antes de tocar nada (de paso, cura un saldo viejo guardado)
         BigDecimal saldoAnterior = sale.recalcularSaldo();

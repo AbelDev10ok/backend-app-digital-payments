@@ -1121,14 +1121,14 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true);
 
         assertEquals(SaleStatus.CANCELED.name(), result.getStatus());
         verify(salesRepository).save(sale);
     }
 
     @Test
-    void cancelVentaReponeStockDeLaVariante() throws Exception {
+    void cancelVentaConRestockReponeStockDeLaVariante() throws Exception {
         ProductVariant variant = new ProductVariant();
         variant.setId(5L);
         variant.setStock(7);
@@ -1136,10 +1136,56 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ventaServices.cancelVenta(1L, true);
+        ventaServices.cancelVenta(1L, true, true);
 
         assertEquals(10, variant.getStock());
         verify(variantRepository).save(variant);
+    }
+
+    @Test
+    void cancelVentaSinRestockNoTocaElInventario() throws Exception {
+        ProductVariant variant = new ProductVariant();
+        variant.setId(5L);
+        variant.setStock(7);
+        Sale sale = ventaParaAnular(new BigDecimal("150"), variant,
+                List.of(cuotaPaga(new BigDecimal("100")), cuotaImpaga(new BigDecimal("50"))));
+        when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
+        when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // El producto no volvió: la anulación no toca el stock, pero la
+        // devolución del monto cobrado se asienta igual.
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, false);
+
+        assertEquals(7, variant.getStock());
+        verify(variantRepository, never()).save(any(ProductVariant.class));
+        assertEquals(0, new BigDecimal("100").compareTo(result.getRefundAmount()));
+    }
+
+    @Test
+    void cancelVentaConRestockEnPrestamoRechaza() {
+        ProductVariant variant = new ProductVariant();
+        variant.setId(5L);
+        variant.setStock(7);
+        Sale sale = ventaParaAnular(new BigDecimal("200"), variant, List.of(cuotaImpaga(new BigDecimal("100"))));
+        sale.setKind(SaleKind.PRESTAMO);
+        when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> ventaServices.cancelVenta(1L, false, true));
+
+        verify(salesRepository, never()).save(any(Sale.class));
+        verify(variantRepository, never()).save(any(ProductVariant.class));
+    }
+
+    @Test
+    void cancelVentaConRestockEnVentaSinVarianteRechaza() {
+        Sale sale = ventaParaAnular(new BigDecimal("200"), null, List.of(cuotaImpaga(new BigDecimal("100"))));
+        when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> ventaServices.cancelVenta(1L, false, true));
+
+        verify(salesRepository, never()).save(any(Sale.class));
     }
 
     @Test
@@ -1152,7 +1198,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ventaServices.cancelVenta(1L, true);
+        ventaServices.cancelVenta(1L, true, true);
 
         ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
         verify(salesRepository).save(captor.capture());
@@ -1173,7 +1219,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true);
 
         assertEquals(0, new BigDecimal("100").compareTo(result.getRefundAmount()));
         assertEquals(0, new BigDecimal("100").compareTo(result.getCollectedAmount()));
@@ -1191,7 +1237,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, false);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, false, true);
 
         ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
         verify(salesRepository).save(captor.capture());
@@ -1213,7 +1259,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, false);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, false, true);
 
         // Sin devolución y sin deuda pendiente: el registro anulado no aporta a la
         // deuda del cliente (remaining = 0) ni a los reembolsos (refundAmount = 0).
@@ -1231,7 +1277,7 @@ class VentaServicesTest {
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true);
 
         assertEquals(0, result.getRefundAmount().signum());
         assertEquals(0, new BigDecimal("0").compareTo(result.getCollectedAmount()));
@@ -1247,12 +1293,38 @@ class VentaServicesTest {
         sale.setStatus(SaleStatus.CANCELED);
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
 
-        SaleResponseDto result = ventaServices.cancelVenta(1L, true);
+        SaleResponseDto result = ventaServices.cancelVenta(1L, true, true);
 
         assertEquals(SaleStatus.CANCELED.name(), result.getStatus());
         verify(salesRepository, never()).save(any(Sale.class));
         verify(variantRepository, never()).save(any(ProductVariant.class));
         assertEquals(7, variant.getStock());
+    }
+
+    @Test
+    void updateSaleRechazaVentaAnulada() {
+        Business business = new Business();
+        business.setId(1L);
+        Sale sale = new Sale();
+        sale.setId(1L);
+        sale.setBusiness(business);
+        sale.setStatus(SaleStatus.CANCELED);
+        when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
+
+        assertThrows(IllegalStateException.class,
+                () -> ventaServices.updateSale(new SaleUpdateRequestDto(), 1L));
+
+        verify(salesRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void markPrestamoAsCompletedRechazaVentaAnulada() {
+        Sale sale = ventaConCuotaImpaga(new BigDecimal("100"), new BigDecimal("100"));
+        sale.setStatus(SaleStatus.CANCELED);
+        when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
+
+        assertThrows(IllegalStateException.class,
+                () -> ventaServices.markPrestamoAsCompleted(1L, new BigDecimal("100")));
     }
 
     @Test

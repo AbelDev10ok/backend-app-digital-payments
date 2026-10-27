@@ -249,6 +249,17 @@ class FeeServicesTest {
     }
 
     @Test
+    void registerPaymentRechazaCuotaDeVentaAnulada() {
+        sale.setStatus(SaleStatus.CANCELED);
+        when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+        assertThrows(IllegalStateException.class,
+                () -> feeServices.registerPayment(1L, new BigDecimal("50"), LocalDate.now(), "EFECTIVO"));
+
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
     void registerPaymentRechazaMontoNoPositivo() {
         when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
 
@@ -335,6 +346,17 @@ class FeeServicesTest {
         assertEquals(Boolean.FALSE, fee.getPaid());
         assertEquals(0, new BigDecimal("100").compareTo(fee.getAmount()));
         verify(feeRepository).save(fee);
+    }
+
+    @Test
+    void postponeFeeRechazaCuotaDeVentaAnulada() {
+        sale.setStatus(SaleStatus.CANCELED);
+        when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+        assertThrows(IllegalStateException.class,
+                () -> feeServices.postponeFee(1L, LocalDate.now().plusDays(5), null, null));
+
+        verify(feeRepository, never()).save(any(Fee.class));
     }
 
     @Nested
@@ -867,6 +889,15 @@ class FeeServicesTest {
             assertThrows(IllegalArgumentException.class, () -> feeServices.deleteFee(1L));
             assertEquals(1, sale.getFees().size());
             verify(feeRepository, never()).delete(fee);
+        }
+
+        @Test
+        void rechazaEliminarUnaCuotaDeVentaAnulada() {
+            sale.setStatus(SaleStatus.CANCELED);
+            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+            assertThrows(IllegalStateException.class, () -> feeServices.deleteFee(1L));
+            verify(feeRepository, never()).delete(any(Fee.class));
         }
 
         @Test

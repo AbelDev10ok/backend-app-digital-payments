@@ -392,6 +392,10 @@ public class VentaServices implements IVentaServices {
                 .orElseThrow(() -> new RuntimeException("Venta no encontrada"));
         TenantGuard.verificar(sale.getBusiness() != null ? sale.getBusiness().getId() : null);
 
+        if (sale.getStatus() == SaleStatus.CANCELED) {
+            throw new IllegalStateException("No se puede completar una venta anulada");
+        }
+
         if (sale.getStatus() == SaleStatus.COMPLETED) {
             throw new IllegalStateException("La venta ya está completada");
         }
@@ -438,6 +442,11 @@ public class VentaServices implements IVentaServices {
         Sale existingSale = salesRepository.findById(id)
                 .orElseThrow(() -> new Exception("Venta no encontrada con ID: " + id));
         TenantGuard.verificar(existingSale.getBusiness() != null ? existingSale.getBusiness().getId() : null);
+
+        // Una venta anulada no se edita: el estado CANCELADO es terminal.
+        if (existingSale.getStatus() == SaleStatus.CANCELED) {
+            throw new IllegalStateException("No se puede editar una venta anulada");
+        }
 
         SaleKind kind = SaleKind.fromString(sale.getKind());
 
@@ -791,25 +800,32 @@ public class VentaServices implements IVentaServices {
     }
 
     // Anula una venta o préstamo: conserva el registro con estado CANCELADO (queda
-    // excluida de deudas y estadísticas), registra el monto ya cobrado como reembolso
-    // (si refund=true se devuelve al cliente; si false queda retenido) y repone el
-    // stock de los productos con control de inventario (V9).
+    // excluida de deudas, agenda y estadísticas) y deja la deuda en cero. Dos efectos
+    // opcionales e independientes:
+    //  - refund=true: asienta como devolución el monto ya cobrado (si false, no se
+    //    registra ninguna devolución).
+    //  - restock=true: devuelve las unidades al stock (sólo venta con producto); si
+    //    false el inventario no se toca, y el borrado posterior tampoco lo repone.
     @Transactional
     @Override
-    public SaleResponseDto cancelVenta(Long id, boolean refund) throws Exception {
+    public SaleResponseDto cancelVenta(Long id, boolean refund, boolean restock) throws Exception {
         Sale sale = salesRepository.findById(id)
                 .orElseThrow(() -> new Exception("Sale not found"));
         TenantGuard.verificar(sale.getBusiness() != null ? sale.getBusiness().getId() : null);
 
+        // Ya anulada: idempotente. No vuelve a tocar stock ni devoluciones.
         if (sale.getStatus() == SaleStatus.CANCELED) {
             SaleResponseDto dto = convertirAVentaResponseDTO(sale);
             adjuntarRemito(dto);
             return dto;
         }
 
+        if (restock && (sale.getKind() != SaleKind.VENTA || sale.getVariant() == null)) {
+            throw new IllegalArgumentException("Solo se puede reponer el stock de una venta con producto");
+        }
+
         // Lo ya cobrado (cobros registrados en el log). Las cuotas se conservan como
-        // historial del registro anulado. Si refund=true se registra como devolución al
-        // cliente; si refund=false el monto queda retenido por el negocio.
+        // historial del registro anulado.
         BigDecimal collected = sale.getFees().stream()
                 .map(Fee::getPaidAmount)
                 .filter(Objects::nonNull)
@@ -819,8 +835,9 @@ public class VentaServices implements IVentaServices {
         sale.setRealFinalDate(LocalDate.now());
         sale.setStatus(SaleStatus.CANCELED);
 
-        // Reponer stock: mismas condiciones que el borrado físico.
-        reponerStock(sale);
+        if (restock) {
+            reponerStock(sale);
+        }
 
         SaleResponseDto dto = convertirAVentaResponseDTO(salesRepository.save(sale));
         adjuntarRemito(dto);

@@ -35,13 +35,14 @@ public interface IFeeRepository extends JpaRepository<Fee, Long>, JpaSpecificati
             "WHERE f.paid = false AND f.expirationDate < :date")
     List<Object[]> sumOverdueFeesBefore(@Param("date") LocalDate date);
 
-    // Versiones agrupadas por moneda (nunca se suman monedas distintas)
+    // Versiones agrupadas por moneda (nunca se suman monedas distintas).
+    // Las cuotas de una venta anulada no cuentan: esa venta ya no se cobra.
     @Query("SELECT s.currency, COUNT(f), SUM(" + QueryFragments.MONTO_EFECTIVO_CUOTA + ") FROM Fee f JOIN f.sale s " +
-            "WHERE f.paid = false AND f.expirationDate = :date GROUP BY s.currency")
+            "WHERE f.paid = false AND f.expirationDate = :date AND s.status != 'CANCELED' GROUP BY s.currency")
     List<Object[]> sumPendingFeesByExpirationDateGrouped(@Param("date") LocalDate date);
 
     @Query("SELECT s.currency, COUNT(f), SUM(" + QueryFragments.MONTO_EFECTIVO_CUOTA + ") FROM Fee f JOIN f.sale s " +
-            "WHERE f.paid = false AND f.expirationDate < :date GROUP BY s.currency")
+            "WHERE f.paid = false AND f.expirationDate < :date AND s.status != 'CANCELED' GROUP BY s.currency")
     List<Object[]> sumOverdueFeesBeforeGrouped(@Param("date") LocalDate date);
 
     // ------

@@ -87,13 +87,15 @@ public class LegacyLoansController {
         return ResponseEntity.ok().body(new ApiResponse("Venta eliminada correctamente", HttpStatus.OK, null));
     }
 
-    // anular venta: conserva el registro con estado CANCELADO y repone el stock.
-    // refund=true -> el monto ya cobrado se devuelve al cliente; false -> se retiene.
+    // anular venta: conserva el registro con estado CANCELADO y deja la deuda en cero.
+    // refund=true -> asienta la devolucion del monto ya cobrado; false -> sin devolucion.
+    // restock=true -> devuelve las unidades al stock (solo venta con producto).
     @PutMapping("/cancel/{saleId}")
     public ResponseEntity<ApiResponse> cancelVenta(
             @PathVariable Long saleId,
-            @RequestParam(defaultValue = "true") boolean refund) throws Exception {
-        SaleResponseDto sale = ventaServices.cancelVenta(saleId, refund);
+            @RequestParam(defaultValue = "true") boolean refund,
+            @RequestParam(defaultValue = "true") boolean restock) throws Exception {
+        SaleResponseDto sale = ventaServices.cancelVenta(saleId, refund, restock);
         return ResponseEntity.ok().body(new ApiResponse("Venta anulada correctamente", HttpStatus.OK, sale));
     }
 

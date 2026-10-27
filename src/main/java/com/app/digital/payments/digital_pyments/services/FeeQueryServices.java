@@ -24,6 +24,7 @@ import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IFeeQueryServices;
 import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
 import com.app.digital.payments.digital_pyments.utils.FeeStatus;
+import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 
 import jakarta.persistence.criteria.Predicate;
 
@@ -66,7 +67,8 @@ public class FeeQueryServices implements IFeeQueryServices {
 
         Specification<Fee> spec = (root, query, cb) -> cb.and(
                 cb.isFalse(root.get("paid")),
-                cb.lessThanOrEqualTo(root.get("expirationDate"), hoy));
+                cb.lessThanOrEqualTo(root.get("expirationDate"), hoy),
+                cb.notEqual(root.get("sale").get("status"), SaleStatus.CANCELED));
         Page<CuotaListItemDto> page = feeRepository.findAll(spec,
                 PageRequest.of(0, MAX_ITEMS_COBROS_HOY, Sort.by(Sort.Direction.ASC, "expirationDate")))
                 .map(fee -> toDto(fee, hoy));
@@ -79,6 +81,10 @@ public class FeeQueryServices implements IFeeQueryServices {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             LocalDate hoy = LocalDate.now();
+
+            // Una venta anulada es terminal: sus cuotas no se cobran ni se listan
+            // (el backend rechaza registrarlas), así que no entran en la vista.
+            predicates.add(cb.notEqual(root.get("sale").get("status"), SaleStatus.CANCELED));
 
             if (estado != null) {
                 switch (estado) {
