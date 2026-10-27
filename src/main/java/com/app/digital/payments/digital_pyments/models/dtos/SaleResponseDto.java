@@ -63,6 +63,10 @@ public class SaleResponseDto {
     // la reimpresión sin pedir el documento completo en cada fila.
     private RemitoResumenDto remito;
 
+    // Vendedor sellado en la operación (autoría comercial). Null = sin atribuir.
+    private Long sellerId;
+    private String sellerName;
+
 
 
 
@@ -326,5 +330,21 @@ public class SaleResponseDto {
 
     public void setRemito(RemitoResumenDto remito) {
         this.remito = remito;
+    }
+
+    public Long getSellerId() {
+        return sellerId;
+    }
+
+    public void setSellerId(Long sellerId) {
+        this.sellerId = sellerId;
+    }
+
+    public String getSellerName() {
+        return sellerName;
+    }
+
+    public void setSellerName(String sellerName) {
+        this.sellerName = sellerName;
     }
 }

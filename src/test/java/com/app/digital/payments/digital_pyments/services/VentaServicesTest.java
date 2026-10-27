@@ -1565,4 +1565,99 @@ class VentaServicesTest {
         assertEquals(Integer.valueOf(2), siguiente.getNumberFee());
         assertEquals(0, new BigDecimal("50").compareTo(siguiente.getAmount()));
     }
+
+    // --- Vendedor sellado de la operación ---
+
+    @Test
+    void createVentaSellaElVendedorDeLaOperacion() throws Exception {
+        when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        prepararProducto(1L, "Televisor", new BigDecimal("150"));
+        SaleRequestDto dto = dtoVenta("VENTA", "Televisor");
+        dto.setVariant(1L);
+        dto.setSellerId(2L);
+
+        Client vendedor = new Client();
+        vendedor.setId(2L);
+        vendedor.setName("luis");
+        vendedor.setSeller(true);
+        when(clientRepository.findById(2L)).thenReturn(Optional.of(vendedor));
+
+        SaleResponseDto result = ventaServices.createVenta(dto);
+
+        assertEquals(2L, result.getSellerId());
+        assertEquals("luis", result.getSellerName());
+    }
+
+    @Test
+    void createVentaRechazaAtribuirseAlMismoCliente() throws Exception {
+        SaleRequestDto dto = dtoVenta("VENTA", "Televisor");
+        dto.setVariant(1L);
+        dto.setSellerId(1L); // la propia persona que compra
+
+        Client cliente = new Client();
+        cliente.setId(1L);
+        cliente.setSeller(true);
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(cliente));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> ventaServices.createVenta(dto));
+
+        assertEquals("Una operación no puede atribuirse a la misma persona que la compra.", ex.getMessage());
+    }
+
+    @Test
+    void updateSaleCorrigeElVendedorSellado() throws Exception {
+        Client cliente = new Client();
+        cliente.setId(1L);
+
+        Sale sale = new Sale();
+        sale.setId(10L);
+        sale.setClient(cliente);
+        sale.setStatus(SaleStatus.ACTIVE);
+        sale.setKind(SaleKind.PRESTAMO);
+        when(salesRepository.findById(10L)).thenReturn(Optional.of(sale));
+
+        Client vendedor = new Client();
+        vendedor.setId(2L);
+        vendedor.setName("luis");
+        vendedor.setSeller(true);
+        when(clientRepository.findById(2L)).thenReturn(Optional.of(vendedor));
+
+        SaleUpdateRequestDto dto = new SaleUpdateRequestDto();
+        dto.setKind("PRESTAMO");
+        dto.setDescriptionProduct("Préstamo personal");
+        dto.setSellerId(2L);
+
+        ventaServices.updateSale(dto, 10L);
+
+        assertEquals(2L, sale.getSeller().getId());
+        verify(salesRepository).save(sale);
+    }
+
+    @Test
+    void updateSaleSinVendedorDejaLaOperacionSinAtribuir() throws Exception {
+        Client cliente = new Client();
+        cliente.setId(1L);
+
+        Client vendedor = new Client();
+        vendedor.setId(2L);
+        vendedor.setSeller(true);
+
+        Sale sale = new Sale();
+        sale.setId(10L);
+        sale.setClient(cliente);
+        sale.setSeller(vendedor);
+        sale.setStatus(SaleStatus.ACTIVE);
+        sale.setKind(SaleKind.PRESTAMO);
+        when(salesRepository.findById(10L)).thenReturn(Optional.of(sale));
+
+        SaleUpdateRequestDto dto = new SaleUpdateRequestDto();
+        dto.setKind("PRESTAMO");
+        dto.setDescriptionProduct("Préstamo personal");
+
+        ventaServices.updateSale(dto, 10L);
+
+        assertNull(sale.getSeller());
+    }
 }

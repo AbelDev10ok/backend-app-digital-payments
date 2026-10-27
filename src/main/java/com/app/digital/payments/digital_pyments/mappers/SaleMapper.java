@@ -29,6 +29,7 @@ public class SaleMapper {
             sale.getClient().isSeller(),
             sale.getClient().getSeller() != null ? sale.getClient().getSeller().getName() : null,
             sale.getClient().getDni()        );
+        clienteDTO.setSellerId(sale.getClient().getSeller() != null ? sale.getClient().getSeller().getId() : null);
 
         SaleResponseDto dto = new SaleResponseDto();
         dto.setId(sale.getId());
@@ -52,6 +53,10 @@ public class SaleMapper {
         dto.setKind(sale.getKind());
         dto.setQuantity(sale.getQuantity());
         dto.setCurrency(sale.getCurrency());
+        // Vendedor sellado en la operación (no el vendedor actual del cliente:
+        // reasignar la cartera no cambia la autoría de esta venta).
+        dto.setSellerId(sale.getSeller() != null ? sale.getSeller().getId() : null);
+        dto.setSellerName(sale.getSeller() != null ? sale.getSeller().getName() : null);
 
 
                 // Aquí está el cambio principal

@@ -60,6 +60,10 @@ public class SaleRequestDto {
     // Variante/SKU vendido (obligatorio para VENTA)
     private Long variant;
 
+    // Vendedor de la operación (opcional). El alta lo precarga desde el cliente
+    // y puede ajustarlo o dejarlo vacío (venta directa).
+    private Long sellerId;
+
     // Cantidad de unidades vendidas (solo VENTA, opcional; por defecto 1)
     @Min(value = 1, message = "La cantidad debe ser mayor a 0")
     private Integer quantity;
@@ -183,6 +187,14 @@ public class SaleRequestDto {
 
     public void setVariant(Long variant) {
         this.variant = variant;
+    }
+
+    public Long getSellerId() {
+        return sellerId;
+    }
+
+    public void setSellerId(Long sellerId) {
+        this.sellerId = sellerId;
     }
 
     public Integer getQuantity() {

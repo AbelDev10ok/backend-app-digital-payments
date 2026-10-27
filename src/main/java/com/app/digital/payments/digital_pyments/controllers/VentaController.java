@@ -67,9 +67,11 @@ public class VentaController{
             @RequestParam(required = false) SaleKind kind,
             @RequestParam(required = false) Payments typePayments,
             @RequestParam(required = false) BigDecimal minAmount,
-            @RequestParam(required = false) BigDecimal maxAmount
+            @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Boolean withoutSeller
     ) {
-            Page<SaleResponseDto> response = ventaServices.getAllVentasPaginacion(pageable, year, month, day, status, aCobrar, clientName, descriptionProduct, productType, kind, typePayments, minAmount, maxAmount);      
+            Page<SaleResponseDto> response = ventaServices.getAllVentasPaginacion(pageable, year, month, day, status, aCobrar, clientName, descriptionProduct, productType, kind, typePayments, minAmount, maxAmount, sellerId, withoutSeller);      
   
             return ResponseEntity.ok().body(new ApiResponse("Ventas obtenidas correctamente", HttpStatus.OK, response));
         

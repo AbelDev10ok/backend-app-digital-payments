@@ -46,6 +46,14 @@ public class Sale{ // Ahora extiende PayableItem
     @JoinColumn(name = "client_id", nullable = false)
     private Client client; // Asume que ya tienes la entidad Client
 
+    // Vendedor de la operación: se sella al crearla y sólo se corrige editando
+    // la operación; reasignar la cartera del cliente no lo mueve. Null = venta
+    // directa o registro anterior a la atribución. Ojo: @BatchSize no aplica a
+    // asociaciones many-to-one (Hibernate 6.6 rechaza el mapeo al bootear).
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "seller_id")
+    private Client seller;
+
     @Column(nullable = false)
     private String descriptionProduct; // Descripción del producto/servicio
 
@@ -216,6 +224,16 @@ public class Sale{ // Ahora extiende PayableItem
 
     public void setClient(Client client) {
         this.client = client;
+    }
+
+
+    public Client getSeller() {
+        return seller;
+    }
+
+
+    public void setSeller(Client seller) {
+        this.seller = seller;
     }
 
 

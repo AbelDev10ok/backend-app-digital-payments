@@ -267,6 +267,35 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     @Query("SELECT SUM(s.refundAmount) FROM Sale s WHERE s.status = 'CANCELED' AND YEAR(COALESCE(s.refundAt, s.dateCreation)) = :year")
     Optional<BigDecimal> findTotalRefundsByYear(@Param("year") int year);
 
+    // ----- Métricas por vendedor -----
+
+    // Operaciones creadas en el período agrupadas por vendedor sellado (seller
+    // nulo = sin atribuir), tipo y moneda: total, anuladas y monto vendido.
+    // El vendido incluye las luego anuladas (igual que el tablero); la columna
+    // de anuladas permite leerlas.
+    @Query("SELECT s.seller.id, s.kind, s.currency, COUNT(s), " +
+            "SUM(CASE WHEN s.status = :canceled THEN 1 ELSE 0 END), SUM(s.priceTotal) " +
+            "FROM Sale s WHERE MONTH(s.dateCreation) = :month AND YEAR(s.dateCreation) = :year " +
+            "GROUP BY s.seller.id, s.kind, s.currency")
+    List<Object[]> findSellerMetricsByPeriod(@Param("month") int month, @Param("year") int year,
+            @Param("canceled") SaleStatus canceled);
+
+    // Cobrado en el período por vendedor sellado: log de pagos por fecha de
+    // cobro (cuenta cuando entró la plata, aunque la operación se anule luego).
+    @Query("SELECT s.seller.id, s.kind, s.currency, SUM(p.amount) " +
+            "FROM Payment p JOIN p.fee f JOIN f.sale s " +
+            "WHERE MONTH(p.paidAt) = :month AND YEAR(p.paidAt) = :year " +
+            "GROUP BY s.seller.id, s.kind, s.currency")
+    List<Object[]> findSellerCollectedByPeriod(@Param("month") int month, @Param("year") int year);
+
+    // Deuda de la cartera actual: saldo de las operaciones activas de los
+    // clientes asignados hoy a cada vendedor (seller nulo = sin vendedor).
+    @Query("SELECT c.seller.id, s.kind, s.currency, SUM(s.remainingAmount) " +
+            "FROM Sale s JOIN s.client c " +
+            "WHERE s.status = :status " +
+            "GROUP BY c.seller.id, s.kind, s.currency")
+    List<Object[]> findSellerPortfolioDebtByKindAndCurrency(@Param("status") SaleStatus status);
+
     // ----- Consultas agrupadas por moneda -----
     // Regla de dominio: los montos de monedas distintas NUNCA se suman entre sí.
     // Cada consulta devuelve filas (…, moneda, suma) para que el servicio arme

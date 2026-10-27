@@ -231,4 +231,89 @@ class ClientServicesTest {
         assertEquals(0, new BigDecimal("150000").compareTo(result.get("ARS")));
         assertEquals(0, new BigDecimal("320").compareTo(result.get("USD")));
     }
+
+    // --- Atribución: vendedor asignado y vendedor de operaciones ---
+
+    @Test
+    void getClientByIdDevuelveElIdDelVendedorAsignado() {
+        Client cliente = new Client();
+        cliente.setId(5L);
+        Business business = new Business();
+        business.setId(1L);
+        cliente.setBusiness(business);
+        Client vendedor = new Client();
+        vendedor.setId(9L);
+        vendedor.setName("luis");
+        cliente.setSeller(vendedor);
+
+        when(clientRepository.findById(5L)).thenReturn(Optional.of(cliente));
+
+        ClientDto dto = clientServices.getClientById(5L);
+
+        assertEquals(9L, dto.getSellerId());
+        assertEquals("luis", dto.getSellerName());
+    }
+
+    @Test
+    void updateClientRechazaSerSuPropioVendedor() {
+        Client existente = clienteVendedor();
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(existente));
+
+        ClientRequestDto dto = dtoValido();
+        dto.setSellerId(1L);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> clientServices.updateClient(1L, dto));
+
+        assertEquals("Un cliente no puede ser su propio vendedor ni generar un ciclo de vendedores.",
+                ex.getMessage());
+        verify(clientRepository, never()).save(any(Client.class));
+    }
+
+    @Test
+    void updateClientRechazaCicloDeVendedores() {
+        // B (id 2) ya tiene a A (id 1) como su vendedor: asignarle B como
+        // vendedor a A cerraría el círculo A → B → A.
+        Business business = new Business();
+        business.setId(1L);
+
+        Client a = new Client();
+        a.setId(1L);
+        a.setBusiness(business);
+
+        Client b = new Client();
+        b.setId(2L);
+        b.setSeller(true);
+        b.setBusiness(business);
+        b.setSeller(a);
+
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(a));
+        when(clientRepository.findById(2L)).thenReturn(Optional.of(b));
+
+        ClientRequestDto dto = dtoValido();
+        dto.setSellerId(2L);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> clientServices.updateClient(1L, dto));
+
+        assertEquals("Un cliente no puede ser su propio vendedor ni generar un ciclo de vendedores.",
+                ex.getMessage());
+    }
+
+    @Test
+    void deletedClientRechazaSiTieneOperacionesAtribuidasComoVendedor() {
+        Client cliente = new Client();
+        cliente.setId(3L);
+        Business business = new Business();
+        business.setId(1L);
+        cliente.setBusiness(business);
+        when(clientRepository.findById(3L)).thenReturn(Optional.of(cliente));
+        when(clientRepository.countBySellerId(3L)).thenReturn(0L);
+        when(clientRepository.existenClientesConTransaccionesAsociadas(3L)).thenReturn(false);
+        when(clientRepository.existenTransaccionesAtribuidasComoVendedor(3L)).thenReturn(true);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> clientServices.deletedClient(3L));
+
+        assertEquals("No se puede eliminar el cliente porque tiene operaciones atribuidas como vendedor.",
+                ex.getMessage());
+        verify(clientRepository, never()).delete(cliente);
+    }
 }

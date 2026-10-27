@@ -10,6 +10,9 @@ public class ClientDto {
     private String email;
     private String direccion;
     private boolean isSeller;
+    // Vendedor asignado (cartera): la edición lo necesita para no perder la
+    // asignación al guardar; antes sólo viajaba el nombre.
+    private Long sellerId;
     private String sellerName;
     private String dni;
     // Deuda por moneda ISO 4217: las monedas distintas nunca se suman
@@ -79,6 +82,14 @@ public class ClientDto {
 
     public String getSellerName() {
         return sellerName;
+    }
+
+    public Long getSellerId() {
+        return sellerId;
+    }
+
+    public void setSellerId(Long sellerId) {
+        this.sellerId = sellerId;
     }
 
     public void setSellerName(String sellerName) {

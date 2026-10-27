@@ -3,9 +3,11 @@ package com.app.digital.payments.digital_pyments.services;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
@@ -144,7 +146,10 @@ public class ClientServices implements IClientServices {
         if (!vendedor.isSeller()) {
             throw new RuntimeException("El cliente con ID: " + vendedorId + " no es un vendedor válido.");
         }
-        
+
+        // Sin ciclos: la cartera no puede volver al propio cliente
+        verificarSinCiclos(clienteId, vendedor);
+
         // Asignamos el vendedor al cliente
         cliente.setSeller(vendedor);
         clientRepository.save(cliente);
@@ -258,10 +263,13 @@ public class ClientServices implements IClientServices {
             if (!vendedor.isSeller()) {
                 throw new RuntimeException("El cliente con ID: " + request.getSellerId() + " no es un vendedor válido.");
             }
+            // Sin ciclos: la cartera no puede volver al propio cliente
+            verificarSinCiclos(id, vendedor);
             // asignamos el vendedor al cliente
             cliente.setSeller(vendedor);
         } else {
-            // Si no se proporciona sellerId, desasignar el vendedor
+            // Si no se proporciona sellerId, desasignar el vendedor: la UI manda
+            // el valor explícito (vacío sólo cuando el usuario lo quita)
             cliente.setSeller(null);
         }
 
@@ -292,6 +300,12 @@ public class ClientServices implements IClientServices {
         // si el cliente tiene ventas o prestamos asociados, no se puede eliminar
         if (clientRepository.existenClientesConTransaccionesAsociadas(id)) {
             throw new RuntimeException("No se puede eliminar el cliente porque tiene ventas asociadas.");
+        }
+
+        // con historial atribuido como vendedor tampoco: su nombre acompaña a
+        // las operaciones ya realizadas
+        if (clientRepository.existenTransaccionesAtribuidasComoVendedor(id)) {
+            throw new RuntimeException("No se puede eliminar el cliente porque tiene operaciones atribuidas como vendedor.");
         }
 
         clientRepository.delete(cliente);
@@ -358,8 +372,26 @@ public class ClientServices implements IClientServices {
             .collect(Collectors.toList());
     }
 
+    /**
+     * Evita vínculos circulares en la cartera: un cliente no puede quedar como
+     * su propio vendedor, directo o indirecto (A vendedor de B y B vendedor de
+     * A). Se recorre la cadena del vendedor candidato; si los datos ya tuvieran
+     * un ciclo, se corta para no quedar en loop.
+     */
+    private void verificarSinCiclos(Long clienteId, Client vendedor) {
+        Set<Long> visitados = new HashSet<>();
+        Client actual = vendedor;
+        while (actual != null && actual.getId() != null && visitados.add(actual.getId())) {
+            if (actual.getId().equals(clienteId)) {
+                throw new RuntimeException(
+                        "Un cliente no puede ser su propio vendedor ni generar un ciclo de vendedores.");
+            }
+            actual = actual.getSeller();
+        }
+    }
+
     private ClientDto convertirADTO(Client cliente) {
-        return new ClientDto(
+        ClientDto dto = new ClientDto(
             cliente.getId(),
             cliente.getName(),
             cliente.getTelefono(),
@@ -369,6 +401,10 @@ public class ClientServices implements IClientServices {
             cliente.getSeller() != null ? cliente.getSeller().getName() : null,
             cliente.getDni()
         );
+        // Id del vendedor asignado: la edición lo usa para no perder la cartera
+        // (antes sólo viajaba el nombre y guardar sin tocar el campo la borraba).
+        dto.setSellerId(cliente.getSeller() != null ? cliente.getSeller().getId() : null);
+        return dto;
     }
 
 }

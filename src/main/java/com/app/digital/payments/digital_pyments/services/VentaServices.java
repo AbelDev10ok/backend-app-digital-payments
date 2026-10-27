@@ -96,6 +96,10 @@ public class VentaServices implements IVentaServices {
         // el cliente tiene que pertenecer al negocio autenticado
         TenantGuard.verificar(client.getBusiness() != null ? client.getBusiness().getId() : null);
 
+        // Vendedor de la operación: se sella al crearla y no lo mueve una
+        // reasignación posterior del cliente. Null = venta directa.
+        Client seller = resolverVendedorDeOperacion(saleDto.getSellerId(), client);
+
         // Categoría de producto: para VENTA se deriva SIEMPRE del producto del
         // catálogo (cada producto está ligado a su categoría); para PRESTAMO es opcional.
         ProductType productType = null;
@@ -257,6 +261,7 @@ public class VentaServices implements IVentaServices {
 
         Sale newSale = new Sale();
         newSale.setClient(client);
+        newSale.setSeller(seller);
         newSale.setKind(kind);
         newSale.setDescriptionProduct(description);
         newSale.setProductType(productType);
@@ -346,6 +351,30 @@ public class VentaServices implements IVentaServices {
         Sale savedSale = salesRepository.save(newSale);
 
         return convertirAVentaResponseDTO(savedSale);
+    }
+
+    /**
+     * Vendedor de una operación (venta o préstamo).
+     *
+     * La autoría comercial se sella en la operación al crearla: si el pedido no
+     * trae vendedor queda sin atribuir (venta directa), y una operación nunca se
+     * atribuye a la misma persona que la compra (sus compras personales no
+     * cuentan como ventas propias).
+     */
+    private Client resolverVendedorDeOperacion(Long sellerId, Client cliente) {
+        if (sellerId == null) {
+            return null;
+        }
+        Client vendedor = clientRepository.findById(sellerId)
+                .orElseThrow(() -> new IllegalArgumentException("Vendedor no encontrado con ID: " + sellerId));
+        TenantGuard.verificar(vendedor.getBusiness() != null ? vendedor.getBusiness().getId() : null);
+        if (!vendedor.isSeller()) {
+            throw new IllegalArgumentException("El cliente con ID: " + sellerId + " no es un vendedor válido.");
+        }
+        if (cliente != null && vendedor.getId() != null && vendedor.getId().equals(cliente.getId())) {
+            throw new IllegalArgumentException("Una operación no puede atribuirse a la misma persona que la compra.");
+        }
+        return vendedor;
     }
 
     /**
@@ -539,6 +568,11 @@ public class VentaServices implements IVentaServices {
         }
         existingSale.setDescriptionProduct(description);
 
+        // El vendedor de la operación se corrige sólo desde acá (deliberado):
+        // reasignar la cartera del cliente no reescribe la autoría histórica.
+        // Null = sin atribuir.
+        existingSale.setSeller(resolverVendedorDeOperacion(sale.getSellerId(), existingSale.getClient()));
+
         salesRepository.save(existingSale);
     }
 
@@ -579,11 +613,13 @@ public class VentaServices implements IVentaServices {
         SaleKind kind,
         Payments typePayments,
         BigDecimal minAmount,
-        BigDecimal maxAmount
+        BigDecimal maxAmount,
+        Long sellerId,
+        Boolean withoutSeller
         ) {
         Specification<Sale> spec = buildSalesSpecification(
             year, month, day, status, aCobrar, clientName, descriptionProduct, productType, kind,
-            typePayments, minAmount, maxAmount
+            typePayments, minAmount, maxAmount, sellerId, withoutSeller
         );
         Page<SaleResponseDto> page = salesRepository.findAll(spec, pageable)
                 .map(sale -> convertirAVentaResponseDTO(sale));
@@ -606,7 +642,7 @@ public class VentaServices implements IVentaServices {
     private long countSales(SaleKind kind, SaleStatus status) {
         Specification<Sale> spec = buildSalesSpecification(
             null, null, null, status, null, null, null, null, kind,
-            null, null, null
+            null, null, null, null, null
         );
         return salesRepository.count(spec);
     }
@@ -614,7 +650,7 @@ public class VentaServices implements IVentaServices {
     private long countACobrar(SaleKind kind) {
         Specification<Sale> spec = buildSalesSpecification(
             null, null, null, null, true, null, null, null, kind,
-            null, null, null
+            null, null, null, null, null
         );
         return salesRepository.count(spec);
     }
@@ -631,7 +667,9 @@ public class VentaServices implements IVentaServices {
         SaleKind kind,
         Payments typePayments,
         BigDecimal minAmount,
-        BigDecimal maxAmount
+        BigDecimal maxAmount,
+        Long sellerId,
+        Boolean withoutSeller
         ) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -699,6 +737,16 @@ public class VentaServices implements IVentaServices {
 
             if (productType != null) {
                 predicates.add(criteriaBuilder.equal(root.get("productType").get("id"), productType));
+            }
+
+            // Vendedor de la operación sellado al crearla; "sin vendedor" cubre
+            // las ventas directas y los registros anteriores a la atribución.
+            if (sellerId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("seller").get("id"), sellerId));
+            }
+
+            if (Boolean.TRUE.equals(withoutSeller)) {
+                predicates.add(criteriaBuilder.isNull(root.get("seller")));
             }
 
             return criteriaBuilder.and(predicates.toArray(new Predicate[0]));

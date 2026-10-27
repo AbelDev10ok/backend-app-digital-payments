@@ -108,6 +108,19 @@ public interface IClientRepository extends JpaRepository<Client, Long>, JpaSpeci
     // obtener clientes por vendedor
     List<Client> findBySellerId(Long sellerId);
 
+    // ----- Métricas por vendedor -----
+
+    // Cartera actual: cuántos clientes tiene asignados cada vendedor. Incluye
+    // la fila con seller nulo (clientes sin vendedor) para que los totales
+    // cuadren con el tablero.
+    @Query("SELECT c.seller.id, COUNT(c) FROM Client c GROUP BY c.seller.id")
+    List<Object[]> countCarteraBySeller();
+
+    // ¿El cliente quedó como vendedor de alguna operación? Con historial
+    // atribuido no se borra: su nombre acompaña a las ventas ya realizadas.
+    @Query("SELECT CASE WHEN COUNT(s) > 0 THEN true ELSE false END FROM Sale s WHERE s.seller.id = :clientId")
+    boolean existenTransaccionesAtribuidasComoVendedor(@Param("clientId") Long clientId);
+
     Optional<Client> findByDni(String dni);
 
     // Nombres repetidos dentro del negocio (el nombre ya no se guarda en minúsculas,

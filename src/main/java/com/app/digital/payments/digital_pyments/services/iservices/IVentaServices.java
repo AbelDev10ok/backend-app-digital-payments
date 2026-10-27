@@ -32,7 +32,9 @@ public interface IVentaServices {
         SaleKind kind,
         Payments typePayments,
         BigDecimal minAmount,
-        BigDecimal maxAmount
+        BigDecimal maxAmount,
+        Long sellerId,
+        Boolean withoutSeller
     );
     SalesCountsDto getSalesCounts(SaleKind kind);
     void markPrestamoAsCompleted(Long saleId, BigDecimal amountPaid);
