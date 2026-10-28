@@ -5,11 +5,32 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
+import org.springframework.security.core.Authentication;
+
+import com.app.digital.payments.digital_pyments.models.Usuario;
+
 import jakarta.servlet.http.HttpServletRequest;
 
 public final class SecurityUtils {
 
     private SecurityUtils() {
+    }
+
+    /**
+     * Email del usuario autenticado. El filtro JWT deja como principal la
+     * entidad {@link Usuario}, asi que {@code authentication.getName()} NO es el
+     * email (devuelve el toString() del objeto). Si el principal no es un
+     * Usuario (p. ej. tests con @WithMockUser), cae al nombre del token.
+     */
+    public static String emailActual(Authentication authentication) {
+        if (authentication == null) {
+            return null;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof Usuario usuario) {
+            return usuario.getEmail();
+        }
+        return authentication.getName();
     }
 
     public static String hashRefreshToken(String token) {

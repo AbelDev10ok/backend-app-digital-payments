@@ -1,5 +1,7 @@
 package com.app.digital.payments.digital_pyments.controllers;
 
+import java.util.Map;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.app.digital.payments.digital_pyments.models.dtos.ChangePasswordRequestDto;
 import com.app.digital.payments.digital_pyments.services.UsuarioServices;
 import com.app.digital.payments.digital_pyments.utils.ApiResponse;
+import com.app.digital.payments.digital_pyments.utils.SecurityUtils;
 import com.app.digital.payments.digital_pyments.utils.ValidationEntities;
 
 import org.springframework.http.HttpStatus;
@@ -44,9 +47,12 @@ public class UsuarioController {
                     .badRequest()
                     .body(validationEntities.validation(result));
         }
-        usuarioServices.changePassword(authentication.getName(), request);
+        // El principal es la entidad Usuario: el email se lee de ahi (getName()
+        // devolveria el toString() del objeto y el usuario no se encontraria).
+        String refreshToken = usuarioServices.changePassword(
+                SecurityUtils.emailActual(authentication), request);
         return ResponseEntity.ok(new ApiResponse(
                 "Contraseña actualizada. Las demás sesiones fueron cerradas.",
-                HttpStatus.OK, null));
+                HttpStatus.OK, Map.of("refreshToken", refreshToken)));
     }
 }

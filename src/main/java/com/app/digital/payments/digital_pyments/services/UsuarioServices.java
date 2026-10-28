@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.app.digital.payments.digital_pyments.configuration.security.JwtUtil;
 import com.app.digital.payments.digital_pyments.models.Business;
 import com.app.digital.payments.digital_pyments.models.ProductType;
 import com.app.digital.payments.digital_pyments.models.Role;
@@ -23,6 +24,7 @@ import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IRoleRepository;
 import com.app.digital.payments.digital_pyments.repositories.IUsuarioRepository;
+import com.app.digital.payments.digital_pyments.utils.SecurityUtils;
 
 import jakarta.mail.MessagingException;
 
@@ -51,15 +53,19 @@ public class UsuarioServices {
 
     private final IProductTypeRepository productTypeRepository;
 
+    private final JwtUtil jwtUtil;
+
     public UsuarioServices(IUsuarioRepository usuarioRepository, IRoleRepository roleRepository,
             PasswordEncoder passwordEncoder, EmailServices emailServices,
-            IBusinessRepository businessRepository, IProductTypeRepository productTypeRepository) {
+            IBusinessRepository businessRepository, IProductTypeRepository productTypeRepository,
+            JwtUtil jwtUtil) {
         this.usuarioRepository = usuarioRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailServices = emailServices;
         this.businessRepository = businessRepository;
         this.productTypeRepository = productTypeRepository;
+        this.jwtUtil = jwtUtil;
     }
 
     @Transactional(readOnly=true)
@@ -243,10 +249,12 @@ public class UsuarioServices {
 
     /**
      * Cambio de contrasena autenticado. Valida la contrasena actual, guarda la
-     * nueva hasheada e invalida el refresh token (cierra las otras sesiones).
+     * nueva hasheada y rota el refresh token: las otras sesiones quedan
+     * invalidadas y se devuelve el refresh nuevo para que este dispositivo
+     * conserve la sesion abierta.
      */
     @Transactional
-    public void changePassword(String email, ChangePasswordRequestDto request) {
+    public String changePassword(String email, ChangePasswordRequestDto request) {
         Usuario usuario = usuarioRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado."));
 
@@ -258,10 +266,13 @@ public class UsuarioServices {
         }
 
         usuario.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        // Invalidar sesiones activas: los otros dispositivos deberan loguearse
-        usuario.setRefreshToken(null);
+        // Rotar el refresh token invalida las sesiones de los otros dispositivos;
+        // el token nuevo se devuelve al cliente que hizo el cambio.
+        String refreshNuevo = jwtUtil.generateRefreshToken(usuario);
+        usuario.setRefreshToken(SecurityUtils.hashRefreshToken(refreshNuevo));
 
         usuarioRepository.save(usuario);
+        return refreshNuevo;
     }
 
         
