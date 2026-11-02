@@ -103,6 +103,43 @@ class BusinessServicesTest {
     }
 
     @Test
+    void updateMyBusinessBorraLosValoresPorDefectoDePrestamos() {
+        business.setDefaultInterestRate(new BigDecimal("12.5"));
+        business.setDefaultPaymentFrequency("MENSUAL");
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(business));
+        when(businessRepository.save(any(Business.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BusinessUpdateRequestDto request = new BusinessUpdateRequestDto();
+        request.setName("Cobros del Sur");
+        // La SPA manda null para borrar la tasa y vacío para borrar la frecuencia:
+        // "Sin valor por defecto" tiene que poder guardarse.
+        request.setDefaultInterestRate(null);
+        request.setDefaultPaymentFrequency("");
+
+        BusinessMeDto dto = businessServices.updateMyBusiness(request);
+
+        assertNull(business.getDefaultInterestRate());
+        assertNull(business.getDefaultPaymentFrequency());
+        assertNull(dto.getDefaultInterestRate());
+        assertNull(dto.getDefaultPaymentFrequency());
+    }
+
+    @Test
+    void updateMyBusinessBorraLaFrecuenciaConEspacios() {
+        business.setDefaultPaymentFrequency("MENSUAL");
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(business));
+        when(businessRepository.save(any(Business.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BusinessUpdateRequestDto request = new BusinessUpdateRequestDto();
+        request.setName("Cobros del Sur");
+        request.setDefaultPaymentFrequency("   ");
+
+        businessServices.updateMyBusiness(request);
+
+        assertNull(business.getDefaultPaymentFrequency());
+    }
+
+    @Test
     void updateMyBusinessRechazaUnaMonedaNoSoportada() {
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(business));
 

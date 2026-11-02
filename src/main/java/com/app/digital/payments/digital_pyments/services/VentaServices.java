@@ -184,6 +184,10 @@ public class VentaServices implements IVentaServices {
             if (quantityFees == null || quantityFees <= 0) {
                 throw new IllegalArgumentException("La cantidad de cuotas debe ser mayor a 0");
             }
+            // Una sola cuota es una operación al contado: en cuotas el piso son 2.
+            if (quantityFees < 2) {
+                throw new IllegalArgumentException("La cantidad de cuotas debe ser al menos 2");
+            }
         }
 
         // Costo: para VENTA se toma fijo del costo de la variante (no editable);

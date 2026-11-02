@@ -61,13 +61,16 @@ public class BusinessServices {
             }
             business.setCurrency(nueva);
         }
-        // La tasa solo se actualiza si viene informada (null = no tocar)
-        if (request.getDefaultInterestRate() != null) {
-            business.setDefaultInterestRate(request.getDefaultInterestRate());
-        }
-        if (request.getDefaultPaymentFrequency() != null && !request.getDefaultPaymentFrequency().isBlank()) {
-            business.setDefaultPaymentFrequency(
-                    Payments.fromString(request.getDefaultPaymentFrequency()).name());
+        // La tasa por defecto de préstamos: null la borra. El DTO no distingue "campo
+        // ausente" de "null" y la SPA siempre manda el valor del formulario, así que
+        // el único modo de volver a "Sin valor por defecto" es guardando null.
+        business.setDefaultInterestRate(request.getDefaultInterestRate());
+        if (request.getDefaultPaymentFrequency() != null) {
+            String frecuencia = request.getDefaultPaymentFrequency().trim();
+            // Vacío borra el default ("Sin valor por defecto").
+            business.setDefaultPaymentFrequency(frecuencia.isEmpty()
+                    ? null
+                    : Payments.fromString(frecuencia).name());
         }
 
         Business saved = businessRepository.save(business);

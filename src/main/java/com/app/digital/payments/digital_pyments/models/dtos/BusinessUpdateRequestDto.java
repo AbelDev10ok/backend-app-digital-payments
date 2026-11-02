@@ -13,7 +13,9 @@ import jakarta.validation.constraints.Size;
 
 /**
  * Request para actualizar los datos del negocio propio. Todos los campos son
- * opcionales salvo el nombre: solo se actualizan los que vienen informados.
+ * opcionales salvo el nombre. Los datos de contacto se borran enviándolos vacíos;
+ * la tasa por defecto se borra con null (es un número: no distingue "ausente" de
+ * null) y la frecuencia, vacía. Así "Sin valor por defecto" se puede guardar.
  */
 public class BusinessUpdateRequestDto {
 
@@ -36,12 +38,14 @@ public class BusinessUpdateRequestDto {
     @Pattern(regexp = "^[A-Za-z]{3}$", message = "La moneda debe ser un codigo ISO de 3 letras")
     private String currency;
 
-    // Tasa de interes por defecto para prestamos, en porcentaje (0 a 500)
+    // Tasa de interes por defecto para prestamos, en porcentaje (0 a 500).
+    // Null borra el default: "Sin valor por defecto" se guarda null.
     @DecimalMin(value = "0", message = "La tasa de interes no puede ser negativa")
     @DecimalMax(value = "500", message = "La tasa de interes no puede superar el 500%")
     private BigDecimal defaultInterestRate;
 
-    // Frecuencia de cuota por defecto para prestamos
+    // Frecuencia de cuota por defecto para prestamos. Vacío borra el default;
+    // CONTADO no aplica: un préstamo nunca es a contado.
     @IValueOfEnum(enumClass = Payments.class, message = "La frecuencia debe ser SEMANAL, QUINCENAL, MENSUAL o CONTADO")
     private String defaultPaymentFrequency;
 

@@ -865,13 +865,45 @@ class VentaServicesTest {
         SaleRequestDto dto = dtoVenta("VENTA", "Producto");
         dto.setVariant(1L);
         dto.setPayments("MENSUAL");
-        dto.setQuantityFees(1);
-        dto.setAmountFee(new BigDecimal("250")); // 250 < 300: por debajo del precio de lista
+        dto.setQuantityFees(2);
+        dto.setAmountFee(new BigDecimal("100")); // 200 < 300: por debajo del precio de lista
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> ventaServices.createVenta(dto));
 
         assertTrue(error.getMessage().contains("precio de venta"));
+        verify(salesRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void createVentaEnCuotasExigeAlMenosDosCuotas() {
+        prepararProductoConPrecio(1L, "Producto", new BigDecimal("100"), new BigDecimal("300"), 10);
+        SaleRequestDto dto = dtoVenta("VENTA", "Producto");
+        dto.setVariant(1L);
+        dto.setPayments("SEMANAL");
+        dto.setQuantityFees(1); // una sola cuota es una venta al contado
+        dto.setAmountFee(new BigDecimal("300"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ventaServices.createVenta(dto));
+
+        assertEquals("La cantidad de cuotas debe ser al menos 2", error.getMessage());
+        verify(salesRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void createPrestamoExigeAlMenosDosCuotas() {
+        SaleRequestDto dto = dtoVenta("PRESTAMO", "Préstamo personal");
+        dto.setPayments("QUINCENAL");
+        dto.setQuantityFees(1);
+        dto.setAmountFee(new BigDecimal("110"));
+        dto.setCost(new BigDecimal("100"));
+        dto.setInterestRate(new BigDecimal("10"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ventaServices.createVenta(dto));
+
+        assertEquals("La cantidad de cuotas debe ser al menos 2", error.getMessage());
         verify(salesRepository, never()).save(any(Sale.class));
     }
 
@@ -1522,9 +1554,9 @@ class VentaServicesTest {
         SaleRequestDto dto = dtoVenta("VENTA", "Producto");
         dto.setVariant(1L);
         dto.setPayFirstFee(true);
-        dto.setQuantityFees(1);
+        dto.setQuantityFees(2);
         dto.setAmountFee(new BigDecimal("400"));
-        dto.setFirstFeeAmount(new BigDecimal("400")); // paga todo
+        dto.setFirstFeeAmount(new BigDecimal("800")); // paga las 2 cuotas de una
 
         SaleResponseDto result = ventaServices.createVenta(dto);
 
