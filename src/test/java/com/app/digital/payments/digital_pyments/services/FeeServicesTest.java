@@ -4,11 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -24,7 +22,6 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -578,7 +575,7 @@ class FeeServicesTest {
     }
 
     @Test
-    void elSaldoNuncaSuperaElTotalAlCobrarEditarYBorrarCuotas() {
+    void elSaldoNuncaSuperaElTotalAlCobrarYEditarCuotas() {
         // Repro del bug: venta de 300 en 3 cuotas de 100
         sale.setPriceTotal(new BigDecimal("300"));
         sale.setRemainingAmount(new BigDecimal("300"));
@@ -599,10 +596,6 @@ class FeeServicesTest {
         feeServices.postponeFee(1L, null, null, new BigDecimal("50"));
         assertEquals(0, new BigDecimal("250").compareTo(sale.getRemainingAmount()));
         assertEquals(0, new BigDecimal("50").compareTo(fee.getPaidAmount()));
-
-        // 3) Eliminarla devuelve solo lo que quedó cobrado (50): el saldo no pasa el total
-        feeServices.deleteFee(1L);
-        assertEquals(0, new BigDecimal("300").compareTo(sale.getRemainingAmount()));
         assertTrue(sale.getRemainingAmount().compareTo(sale.getPriceTotal()) <= 0);
     }
 
@@ -637,44 +630,6 @@ class FeeServicesTest {
                 .orElseThrow();
         assertEquals(0, new BigDecimal("10000").compareTo(agendada.getAmount()));
         assertEquals(Boolean.FALSE, agendada.getPaid());
-    }
-
-    @Test
-    void eliminarUnaCuotaViejaCobradaDevuelveSuMontoAlSaldo() {
-        // Misma cuota vieja, ahora eliminada: lo cobrado vuelve al saldo
-        Fee vieja = new Fee();
-        vieja.setId(1L);
-        vieja.setSale(sale);
-        vieja.setNumberFee(1);
-        vieja.setAmount(new BigDecimal("100"));
-        vieja.setPaid(true);
-        vieja.setPaidAmount(BigDecimal.ZERO);
-        vieja.setExpirationDate(LocalDate.of(2026, 8, 6));
-        vieja.setLastPaymentAt(LocalDateTime.of(2026, 8, 6, 10, 0));
-
-        Fee impaga = new Fee();
-        impaga.setId(2L);
-        impaga.setSale(sale);
-        impaga.setNumberFee(2);
-        impaga.setAmount(new BigDecimal("100"));
-        impaga.setExpirationDate(LocalDate.of(2026, 9, 6));
-        impaga.setPaid(false);
-
-        sale.getFees().clear();
-        sale.getFees().add(vieja);
-        sale.getFees().add(impaga);
-        sale.setRemainingAmount(BigDecimal.ZERO);
-        sale.setStatus(SaleStatus.COMPLETED);
-        sale.setRealFinalDate(LocalDate.now());
-
-        when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(vieja));
-
-        feeServices.deleteFee(1L);
-
-        assertEquals(0, new BigDecimal("100").compareTo(sale.getRemainingAmount()));
-        assertEquals(SaleStatus.ACTIVE, sale.getStatus());
-        assertNull(sale.getRealFinalDate());
-        verify(feeRepository).delete(vieja);
     }
 
     @Test
@@ -917,409 +872,6 @@ class FeeServicesTest {
     }
 
     @Nested
-    class DeleteFeeRestauracionDeSaldo {
-
-        @Test
-        void restauraElRemainingYReabreLaVentaCompletada() {
-            // Dos cuotas cobradas de 100 cada una → se elimina una y la venta reabre su saldo
-            Fee pagada = new Fee();
-            pagada.setId(1L);
-            pagada.setSale(sale);
-            pagada.setNumberFee(1);
-            pagada.setAmount(new BigDecimal("100"));
-            pagada.setPaidAmount(new BigDecimal("100"));
-            pagada.setExpirationDate(LocalDate.of(2026, 8, 6));
-            pagada.setPaid(true);
-            pagada.setLastPaymentAt(LocalDateTime.now());
-
-            Fee pagada2 = new Fee();
-            pagada2.setId(2L);
-            pagada2.setSale(sale);
-            pagada2.setNumberFee(2);
-            pagada2.setAmount(new BigDecimal("100"));
-            pagada2.setPaidAmount(new BigDecimal("100"));
-            pagada2.setExpirationDate(LocalDate.of(2026, 9, 6));
-            pagada2.setPaid(true);
-            pagada2.setLastPaymentAt(LocalDateTime.now());
-
-            sale.getFees().clear();
-            sale.getFees().add(pagada);
-            sale.getFees().add(pagada2);
-            // Total 200: las dos cuotas cobradas
-            sale.setPriceTotal(new BigDecimal("200"));
-            sale.setStatus(SaleStatus.COMPLETED);
-            sale.setRealFinalDate(LocalDate.now());
-
-            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(pagada));
-
-            feeServices.deleteFee(1L);
-
-            // Al desaparecer el cobro de la cuota eliminada vuelve a deber su monto
-            assertEquals(0, new BigDecimal("100").compareTo(sale.getRemainingAmount()));
-            assertEquals(SaleStatus.ACTIVE, sale.getStatus());
-            assertNull(sale.getRealFinalDate());
-            // La cuota eliminada (pagada) ya no pertenece a la venta
-            assertEquals(0,
-                    sale.getFees().stream().filter(f -> Long.valueOf(1L).equals(f.getId())).count());
-            verify(feeRepository).delete(pagada);
-        }
-
-        @Test
-        void rechazaEliminarLaUnicaCuotaDeLaVenta() {
-            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
-
-            assertThrows(IllegalArgumentException.class, () -> feeServices.deleteFee(1L));
-            assertEquals(1, sale.getFees().size());
-            verify(feeRepository, never()).delete(fee);
-        }
-
-        @Test
-        void rechazaEliminarUnaCuotaDeVentaAnulada() {
-            sale.setStatus(SaleStatus.CANCELED);
-            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
-
-            assertThrows(IllegalStateException.class, () -> feeServices.deleteFee(1L));
-            verify(feeRepository, never()).delete(any(Fee.class));
-        }
-
-        @Test
-        void conSaldoRestanteYCuotasPagadasRegeneraLaCuotaSiguiente() {
-            // Dos cuotas pagadas y la venta aún con saldo restante; al eliminar una,
-            // el resto queda sin cuotas impagas y se regenera la siguiente.
-            Fee pagada = new Fee();
-            pagada.setId(1L);
-            pagada.setSale(sale);
-            pagada.setNumberFee(1);
-            pagada.setAmount(new BigDecimal("100"));
-            pagada.setPaidAmount(new BigDecimal("100"));
-            pagada.setExpirationDate(LocalDate.of(2026, 8, 6));
-            pagada.setPaid(true);
-            pagada.setLastPaymentAt(LocalDateTime.now());
-
-            Fee pagada2 = new Fee();
-            pagada2.setId(2L);
-            pagada2.setSale(sale);
-            pagada2.setNumberFee(2);
-            pagada2.setAmount(new BigDecimal("100"));
-            pagada2.setPaidAmount(new BigDecimal("100"));
-            pagada2.setExpirationDate(LocalDate.of(2026, 9, 6));
-            pagada2.setPaid(true);
-            pagada2.setLastPaymentAt(LocalDateTime.now());
-
-            sale.getFees().clear();
-            sale.getFees().add(pagada);
-            sale.getFees().add(pagada2);
-            // Total 300: 200 cobrados en las dos cuotas y 100 todavía pendientes
-            sale.setPriceTotal(new BigDecimal("300"));
-
-            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(pagada));
-
-            feeServices.deleteFee(1L);
-
-            // Vuelve a deber lo que se había cobrado en la cuota eliminada (100),
-            // sobre los 100 que ya debía: 200
-            assertEquals(0, new BigDecimal("200").compareTo(sale.getRemainingAmount()));
-
-            // agenda una cuota por el valor de cuota a partir de la ultima cuota que
-            // queda (renumerada como cuota 1)
-            ArgumentCaptor<Fee> captor = ArgumentCaptor.forClass(Fee.class);
-            verify(feeRepository, atLeastOnce()).save(captor.capture());
-            Fee regenerada = captor.getAllValues().stream()
-                    .filter(f -> Boolean.FALSE.equals(f.getPaid()))
-                    .findFirst()
-                    .orElseThrow();
-            assertEquals(LocalDate.of(2026, 9, 6).plusMonths(1), regenerada.getExpirationDate());
-            assertEquals(2, regenerada.getNumberFee());
-            // La cuota agendada es por el valor de cuota (100), no por toda la deuda
-            assertEquals(0, new BigDecimal("100").compareTo(regenerada.getAmount()));
-            assertEquals(Boolean.FALSE, regenerada.getPaid());
-            // Y la cuota pagada que quedo paso a ser la numero 1
-            assertEquals(1, pagada2.getNumberFee());
-        }
-
-        @Test
-        void borrarUnaCuotaImpagaNoCambiaLaDeudaNiAgendaCuotaPorElSaldo() {
-            // Venta de 150 en 6 cuotas de 25: una sola cuota cobrada y una impaga.
-            // Borrar la impaga no puede perdonar deuda ni crear una cuota que
-            // absorba todo el saldo (el bug que reportó un usuario).
-            Fee cobrada = new Fee();
-            cobrada.setId(1L);
-            cobrada.setSale(sale);
-            cobrada.setNumberFee(1);
-            cobrada.setAmount(new BigDecimal("25"));
-            cobrada.setPaidAmount(new BigDecimal("25"));
-            cobrada.setPaid(true);
-            cobrada.setExpirationDate(LocalDate.of(2026, 10, 10));
-            cobrada.setLastPaymentAt(LocalDateTime.now());
-
-            Fee impaga = new Fee();
-            impaga.setId(2L);
-            impaga.setSale(sale);
-            impaga.setNumberFee(2);
-            impaga.setAmount(new BigDecimal("25"));
-            impaga.setPaid(false);
-            impaga.setExpirationDate(LocalDate.of(2026, 10, 17));
-
-            sale.getFees().clear();
-            sale.getFees().add(cobrada);
-            sale.getFees().add(impaga);
-            sale.setPriceTotal(new BigDecimal("150"));
-            sale.setAmountFee(new BigDecimal("25"));
-
-            when(feeRepository.findById(2L)).thenReturn(java.util.Optional.of(impaga));
-
-            feeServices.deleteFee(2L);
-
-            // Debe 150 - 25 = 125, y la cuota que se agenda vuelve a ser de 25
-            assertEquals(0, new BigDecimal("125").compareTo(sale.getRemainingAmount()));
-            assertEquals(SaleStatus.ACTIVE, sale.getStatus());
-            Fee agendada = sale.getFees().stream()
-                    .filter(f -> Boolean.FALSE.equals(f.getPaid()))
-                    .findFirst()
-                    .orElseThrow();
-            assertEquals(0, new BigDecimal("25").compareTo(agendada.getAmount()));
-        }
-
-        @Test
-        void sinSaldoRestanteNoRegeneraCuota() {
-            // Dos cuotas, ambas sin monto cobrado y la venta sin saldo pendiente;
-            // al eliminar una, el remaining no queda positivo y no se regenera cuota.
-            Fee impagaSinMonto = new Fee();
-            impagaSinMonto.setId(1L);
-            impagaSinMonto.setSale(sale);
-            impagaSinMonto.setNumberFee(1);
-            impagaSinMonto.setAmount(BigDecimal.ZERO);
-            impagaSinMonto.setExpirationDate(LocalDate.of(2026, 8, 6));
-            impagaSinMonto.setPaid(false);
-
-            Fee otra = new Fee();
-            otra.setId(2L);
-            otra.setSale(sale);
-            otra.setNumberFee(2);
-            otra.setAmount(BigDecimal.ZERO);
-            otra.setExpirationDate(LocalDate.of(2026, 9, 6));
-            otra.setPaid(false);
-
-            sale.getFees().clear();
-            sale.getFees().add(impagaSinMonto);
-            sale.getFees().add(otra);
-            sale.setPriceTotal(BigDecimal.ZERO);
-
-            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(impagaSinMonto));
-
-            feeServices.deleteFee(1L);
-
-            assertEquals(0, new BigDecimal("0").compareTo(sale.getRemainingAmount()));
-            // No se agenda ninguna cuota nueva: la unica que queda es la otra,
-            // renumerada como cuota 1
-            assertEquals(1, sale.getFees().size());
-            assertSame(otra, sale.getFees().get(0));
-            assertEquals(1, otra.getNumberFee());
-        }
-
-        @Test
-        void borrarUnaCuotaDelMedioRenumeraLasQueQuedan() {
-            // Cuotas 1, 2 y 3 (agosto, septiembre y octubre) impagas: al borrar la 2
-            // el cronograma tiene que seguir leyendose 1 y 2 (no 1 y 3).
-            Fee cuota1 = cuota(1L, 1, "100", LocalDate.of(2026, 8, 6), false);
-            Fee cuota2 = cuota(2L, 2, "100", LocalDate.of(2026, 9, 6), false);
-            Fee cuota3 = cuota(3L, 3, "100", LocalDate.of(2026, 10, 6), false);
-
-            sale.getFees().clear();
-            sale.getFees().add(cuota1);
-            sale.getFees().add(cuota2);
-            sale.getFees().add(cuota3);
-            sale.setRemainingAmount(new BigDecimal("300"));
-
-            when(feeRepository.findById(2L)).thenReturn(java.util.Optional.of(cuota2));
-
-            feeServices.deleteFee(2L);
-
-            // La cuota de octubre pasa a ser la numero 2
-            assertEquals(1, cuota1.getNumberFee());
-            assertEquals(2, cuota3.getNumberFee());
-            // Y se renumero solo la que cambio
-            verify(feeRepository).save(cuota3);
-            verify(feeRepository, never()).save(cuota1);
-        }
-
-        @Test
-        void borrarLaPrimeraCuotaRenumeraLasQueQuedan() {
-            Fee cuota1 = cuota(1L, 1, "100", LocalDate.of(2026, 8, 6), false);
-            Fee cuota2 = cuota(2L, 2, "100", LocalDate.of(2026, 9, 6), false);
-            Fee cuota3 = cuota(3L, 3, "100", LocalDate.of(2026, 10, 6), false);
-
-            sale.getFees().clear();
-            sale.getFees().add(cuota1);
-            sale.getFees().add(cuota2);
-            sale.getFees().add(cuota3);
-            sale.setRemainingAmount(new BigDecimal("300"));
-
-            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(cuota1));
-
-            feeServices.deleteFee(1L);
-
-            assertEquals(1, cuota2.getNumberFee());
-            assertEquals(2, cuota3.getNumberFee());
-            verify(feeRepository).save(cuota2);
-            verify(feeRepository).save(cuota3);
-        }
-
-        @Test
-        void unaCuotaYaCobradaTambienSeRenumera() {
-            // Cuota 1 y 2 cobradas y la 3 impaga; al borrar la 1 las que quedan se
-            // renumeran, incluida la ya cobrada (le cambia solo la etiqueta).
-            Fee pagada1 = cuota(1L, 1, "100", LocalDate.of(2026, 8, 6), true);
-            Fee pagada2 = cuota(2L, 2, "100", LocalDate.of(2026, 9, 6), true);
-            Fee impaga3 = cuota(3L, 3, "100", LocalDate.of(2026, 10, 6), false);
-
-            sale.getFees().clear();
-            sale.getFees().add(pagada1);
-            sale.getFees().add(pagada2);
-            sale.getFees().add(impaga3);
-            sale.setRemainingAmount(new BigDecimal("100"));
-
-            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(pagada1));
-
-            feeServices.deleteFee(1L);
-
-            assertEquals(1, pagada2.getNumberFee());
-            assertEquals(2, impaga3.getNumberFee());
-            // Sigue cobrada, con su cobro y su fecha intactos
-            assertEquals(Boolean.TRUE, pagada2.getPaid());
-            assertEquals(0, new BigDecimal("100").compareTo(pagada2.getPaidAmount()));
-            verify(feeRepository).save(pagada2);
-        }
-
-        private Fee cuota(Long id, int numero, String monto, LocalDate vencimiento, boolean pagada) {
-            Fee f = new Fee();
-            f.setId(id);
-            f.setSale(sale);
-            f.setNumberFee(numero);
-            f.setAmount(new BigDecimal(monto));
-            f.setExpirationDate(vencimiento);
-            f.setPaid(pagada);
-            if (pagada) {
-                f.setPaidAmount(new BigDecimal(monto));
-                f.setLastPaymentAt(LocalDateTime.now());
-            }
-            return f;
-        }
-
-        @Test
-        void borrarUnaCuotaImpagaNoPerdonaSuMonto() {
-            // Cuota 1 impaga de 100 y cuota 2 impaga de 100 sobre una venta de 200:
-            // al eliminar la primera la deuda sigue siendo 200 (nadie pagó por ella;
-            // la regla vieja la bajaba a 100, perdonando plata que se debía cobrar).
-            Fee impaga1 = new Fee();
-            impaga1.setId(1L);
-            impaga1.setSale(sale);
-            impaga1.setNumberFee(1);
-            impaga1.setAmount(new BigDecimal("100"));
-            impaga1.setExpirationDate(LocalDate.of(2026, 8, 6));
-            impaga1.setPaid(false);
-
-            Fee impaga2 = new Fee();
-            impaga2.setId(2L);
-            impaga2.setSale(sale);
-            impaga2.setNumberFee(2);
-            impaga2.setAmount(new BigDecimal("100"));
-            impaga2.setExpirationDate(LocalDate.of(2026, 9, 6));
-            impaga2.setPaid(false);
-
-            sale.getFees().clear();
-            sale.getFees().add(impaga1);
-            sale.getFees().add(impaga2);
-            sale.setPriceTotal(new BigDecimal("200"));
-
-            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(impaga1));
-
-            feeServices.deleteFee(1L);
-
-            assertEquals(0, new BigDecimal("200").compareTo(sale.getRemainingAmount()));
-            assertEquals(SaleStatus.ACTIVE, sale.getStatus());
-            assertEquals(1, sale.getFees().size());
-            // La cuota que queda conserva su monto (100) y no absorbe la deuda
-            assertEquals(0, new BigDecimal("100").compareTo(impaga2.getAmount()));
-            verify(feeRepository).delete(impaga1);
-        }
-
-        @Test
-        void borrarUnaImpagaConVariasImpagasNoCambiaLaDeuda() {
-            // Tres cuotas impagas de 100 sobre una venta de 300 sin cobros: borrar
-            // una deja la deuda en 300 (se cobra de las otras dos).
-            Fee impaga1 = cuota(1L, 1, "100", LocalDate.of(2026, 8, 6), false);
-            Fee impaga2 = cuota(2L, 2, "100", LocalDate.of(2026, 9, 6), false);
-            Fee impaga3 = cuota(3L, 3, "100", LocalDate.of(2026, 10, 6), false);
-
-            sale.getFees().clear();
-            sale.getFees().add(impaga1);
-            sale.getFees().add(impaga2);
-            sale.getFees().add(impaga3);
-            sale.setPriceTotal(new BigDecimal("300"));
-
-            when(feeRepository.findById(2L)).thenReturn(java.util.Optional.of(impaga2));
-
-            feeServices.deleteFee(2L);
-
-            assertEquals(0, new BigDecimal("300").compareTo(sale.getRemainingAmount()));
-            assertEquals(SaleStatus.ACTIVE, sale.getStatus());
-            assertEquals(2, sale.getFees().size());
-            verify(feeRepository).delete(impaga2);
-        }
-
-        @Test
-        void eliminarLaUltimaCuotaImpagaAgendaUnaCuotaPorLaDeuda() {
-            // Cuota 1 pagada, cuota 2 impaga de 100 y deuda de 150: al eliminar la
-            // impaga la venta queda con deuda pero sin cuotas por cobrar, así que se
-            // agenda una cuota impaga por la deuda (no por el monto estándar).
-            Fee pagada = new Fee();
-            pagada.setId(1L);
-            pagada.setSale(sale);
-            pagada.setNumberFee(1);
-            pagada.setAmount(new BigDecimal("100"));
-            pagada.setPaidAmount(new BigDecimal("100"));
-            pagada.setExpirationDate(LocalDate.of(2026, 8, 6));
-            pagada.setPaid(true);
-            pagada.setLastPaymentAt(LocalDateTime.now());
-
-            Fee impaga = new Fee();
-            impaga.setId(2L);
-            impaga.setSale(sale);
-            impaga.setNumberFee(2);
-            impaga.setAmount(new BigDecimal("100"));
-            impaga.setExpirationDate(LocalDate.of(2026, 9, 6));
-            impaga.setPaid(false);
-
-            sale.getFees().clear();
-            sale.getFees().add(pagada);
-            sale.getFees().add(impaga);
-            // Total 150: 100 cobrados en la cuota 1 y 50 todavía pendientes
-            sale.setPriceTotal(new BigDecimal("150"));
-            sale.setAmountFee(new BigDecimal("100"));
-
-            when(feeRepository.findById(2L)).thenReturn(java.util.Optional.of(impaga));
-
-            feeServices.deleteFee(2L);
-
-            assertEquals(0, new BigDecimal("50").compareTo(sale.getRemainingAmount()));
-            assertEquals(SaleStatus.ACTIVE, sale.getStatus());
-            // Quedó la cuota pagada y la cuota agendada por la deuda
-            assertEquals(2, sale.getFees().size());
-            assertEquals(Boolean.TRUE, sale.getFees().get(0).getPaid());
-            verify(feeRepository).delete(impaga);
-
-            ArgumentCaptor<Fee> captor = ArgumentCaptor.forClass(Fee.class);
-            verify(feeRepository).save(captor.capture());
-            Fee agendada = captor.getValue();
-            assertEquals(2, agendada.getNumberFee());
-            assertEquals(0, new BigDecimal("50").compareTo(agendada.getAmount()));
-            assertEquals(Boolean.FALSE, agendada.getPaid());
-            assertEquals(LocalDate.of(2026, 9, 6), agendada.getExpirationDate());
-        }
-    }
-
-    @Nested
     class RegisterPaymentSobrepago {
 
         @Test
@@ -1337,3 +889,4 @@ class FeeServicesTest {
         }
     }
 }
+

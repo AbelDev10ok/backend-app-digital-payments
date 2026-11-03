@@ -9,7 +9,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -99,11 +98,19 @@ public class FeeController {
 
     }
 
+    /**
+     * Reprogramación en bloque: corre la cuota nombrada y todas las impagas que le
+     * siguen, en períodos de la frecuencia (periods) o en días naturales (days).
+     */
+    @PostMapping("/fee/{feeId}/reprogram")
+    public ResponseEntity<ApiResponse> reprogramFee(
+            @PathVariable Long feeId,
+            @RequestParam(required = false) Integer periods,
+            @RequestParam(required = false) Integer days) 
+    {
+            List<FeeDto> reprogramadas = feeServices.reprogramFee(feeId, periods, days);
+            return ResponseEntity.ok(new ApiResponse("Cuotas reprogramadas correctamente", HttpStatus.OK, reprogramadas));
 
-    @DeleteMapping("/fee/{feeId}")
-    public ResponseEntity<ApiResponse> deleteFee(@PathVariable Long feeId) {
-            feeServices.deleteFee(feeId);
-            return ResponseEntity.ok().body(new ApiResponse("Cuota eliminada correctamente", HttpStatus.OK, feeId));
     }
 
 }

@@ -654,7 +654,8 @@ class VentaServicesTest {
         // El plan cuelga de la operación, no del día en que se cargó: con la fecha
         // de venta vieja, la cuota y la fecha final deben ser las de esa fecha
         assertEquals(LocalDate.of(2026, 9, 19), guardada.getFees().get(0).getExpirationDate());
-        assertEquals(LocalDate.of(2026, 10, 18), guardada.getFinalPaymentDate());
+        // La fecha final es el vencimiento de la última cuota del plan
+        assertEquals(LocalDate.of(2026, 10, 19), guardada.getFinalPaymentDate());
     }
 
     @Test
@@ -1524,6 +1525,8 @@ class VentaServicesTest {
             assertEquals(0, new BigDecimal("100").compareTo(cuota.getAmount()));
             assertEquals(Boolean.FALSE, cuota.getPaid());
         }
+        // La fecha final es el vencimiento de la última cuota, no la fórmula -1 día
+        assertEquals(LocalDate.of(2026, 9, 1).plusWeeks(3), saved.getFinalPaymentDate());
     }
 
     @Test
@@ -1560,6 +1563,8 @@ class VentaServicesTest {
             assertEquals(0, new BigDecimal("100").compareTo(cuota.getAmount()));
             assertEquals(Boolean.FALSE, cuota.getPaid());
         }
+        // La fecha final es el vencimiento de la última cuota, no la fórmula -1 día
+        assertEquals(LocalDate.of(2026, 9, 1).plusDays(75), saved.getFinalPaymentDate());
     }
 
     @Test

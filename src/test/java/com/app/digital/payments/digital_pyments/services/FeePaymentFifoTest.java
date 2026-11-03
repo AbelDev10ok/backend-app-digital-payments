@@ -1,8 +1,6 @@
 package com.app.digital.payments.digital_pyments.services;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -280,24 +278,6 @@ class FeePaymentFifoTest {
         assertEquals(0, new BigDecimal("150").compareTo(f1.getPaidAmount()));
         assertEquals(Boolean.TRUE, f1.getPaid());
         assertEquals(0, new BigDecimal("150").compareTo(sale.getRemainingAmount()));
-    }
-
-    @Test
-    void borrarUnaCuotaImpagaRenumeraSinCambiarLaDeuda() {
-        plan("300", "100", "100", "100");
-        Fee f1 = sale.getFees().get(0);
-        Fee f3 = sale.getFees().get(2);
-
-        feeServices.deleteFee(2L);
-
-        assertEquals(2, sale.getFees().size());
-        assertEquals(Integer.valueOf(1), f1.getNumberFee());
-        assertEquals(Integer.valueOf(2), f3.getNumberFee());
-        assertEquals(0, new BigDecimal("100").compareTo(f1.getAmount()));
-        assertEquals(0, new BigDecimal("100").compareTo(f3.getAmount()));
-        assertEquals(0, new BigDecimal("300").compareTo(sale.getRemainingAmount()));
-        assertFalse(sale.getFees().stream().anyMatch(f -> f.getId() == null));
-        assertNotNull(sale.getStatus());
     }
 
     // Cobrar el resto de una cuota parcial cierra la operacion

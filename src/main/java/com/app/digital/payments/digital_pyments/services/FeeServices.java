@@ -26,6 +26,7 @@ import com.app.digital.payments.digital_pyments.services.iservices.IFeeServices;
 import com.app.digital.payments.digital_pyments.utils.FeePaymentAllocator;
 import com.app.digital.payments.digital_pyments.utils.FeeScheduleCalculator;
 import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
+import com.app.digital.payments.digital_pyments.utils.Payments;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 import com.app.digital.payments.digital_pyments.utils.TenantGuard;
 
@@ -48,51 +49,6 @@ public class FeeServices implements IFeeServices {
         this.feeRepository = feeRepository;
         this.saleRepository = saleRepository;
         this.paymentRepository = paymentRepository;
-    }
-
-    @Override
-    @Transactional
-    public void deleteFee(Long feeId) {
-        Fee fee = getFeeById(feeId);
-        Sale sale = fee.getSale();
-
-        // Una venta anulada es terminal: sus cuotas ya no se eliminan.
-        if (sale.getStatus() == SaleStatus.CANCELED) {
-            throw new IllegalStateException("No se puede eliminar una cuota de una venta anulada");
-        }
-
-        if (sale.getFees().size() == 1 && sale.getFees().contains(fee)) {
-            throw new IllegalArgumentException("No se puede eliminar la única cuota de una venta. Elimine la venta completa si es necesario.");
-        }
-
-        sale.getFees().remove(fee);
-        // El borrado de la cuota arrastra su log de pagos (cascade)
-        feeRepository.delete(fee);
-
-        renumerarCuotas(sale);
-        // El saldo se recalcula desde los cobros que quedan: borrar una cuota
-        // impaga no cambia lo que se debe (nadie pagó por ella), y borrar una
-        // cobrada devuelve su plata al saldo al desaparecer su log de pagos.
-        sale.recalcularSaldo();
-
-        if (sale.getRemainingAmount().signum() > 0) {
-            // Sin cuotas por cobrar la venta quedaría sin nada que agendar: se crea
-            // una por el saldo restante, acotada al valor de cuota de la venta
-            if (sale.getFees().stream().allMatch(f -> Boolean.TRUE.equals(f.getPaid()))) {
-                crearCuotaPorDeuda(sale);
-            }
-            sale.setStatus(SaleStatus.ACTIVE);
-            sale.setRealFinalDate(null);
-        } else {
-            // La deuda quedo en cero: las cuotas impagas sobrantes ya no se cobran
-            eliminarCuotasImpagasSobrantes(sale, fee);
-            if (sale.getStatus() != SaleStatus.COMPLETED) {
-                sale.setStatus(SaleStatus.COMPLETED);
-                sale.setRealFinalDate(LocalDate.now());
-            }
-        }
-
-        saleRepository.save(sale);
     }
 
     // Registro de un cobro: la plata entra por la cuota impaga más antigua y el
@@ -243,6 +199,100 @@ public class FeeServices implements IFeeServices {
 
     @Override
     @Transactional
+    public List<FeeDto> reprogramFee(Long feeId, Integer periods, Integer days) {
+        validarDeltaDeReprogramacion(periods, days);
+
+        Fee fee = getFeeById(feeId);
+        Sale sale = fee.getSale();
+
+        // Una venta anulada es terminal y una completada ya no tiene plan que correr.
+        if (sale.getStatus() == SaleStatus.CANCELED) {
+            throw new IllegalStateException("No se puede reprogramar una cuota de una venta anulada");
+        }
+        if (sale.getStatus() == SaleStatus.COMPLETED) {
+            throw new IllegalStateException("No se puede reprogramar una cuota de una venta completada");
+        }
+        if (Boolean.TRUE.equals(fee.getPaid())) {
+            throw new IllegalStateException("La cuota ya está pagada");
+        }
+
+        // El tramo arranca en la cuota nombrada y sigue por número de cuota: la
+        // lista de la venta no garantiza el orden del cronograma.
+        List<Fee> ordenadas = new ArrayList<>(sale.getFees());
+        ordenadas.sort(Comparator.comparing(Fee::getNumberFee, Comparator.nullsLast(Comparator.naturalOrder())));
+
+        List<Fee> movidas = new ArrayList<>();
+        boolean enElTramo = false;
+        for (Fee cuota : ordenadas) {
+            enElTramo = enElTramo || esLaMismaCuota(cuota, fee);
+            // Las cobradas quedan selladas donde están, aunque caigan en el tramo
+            if (!enElTramo || Boolean.TRUE.equals(cuota.getPaid())) {
+                continue;
+            }
+            cuota.setExpirationDate(correr(cuota.getExpirationDate(), periods, days, sale.getTypePayments()));
+            movidas.add(cuota);
+        }
+
+        // La fecha final esperada es la del plan que quedó agendado
+        sale.setFinalPaymentDate(vencimientoDeLaUltimaCuota(sale));
+
+        // Auditoría: una reprogramación es UN evento, mueva una o muchas cuotas
+        sale.setReprogrammedAt(LocalDateTime.now());
+        sale.setReprogramCount(sale.getReprogramCount() == null ? 1 : sale.getReprogramCount() + 1);
+
+        movidas.forEach(feeRepository::save);
+        saleRepository.save(sale);
+
+        log.debug("Reprogramación en bloque: cuota={} periods={} days={} cuotasMovidas={}",
+                feeId, periods, days, movidas.size());
+        return movidas.stream().map(cuota -> convertToFeeDto(cuota)).toList();
+    }
+
+    // Exactamente uno de los dos deltas, y siempre mayor a 0: la reprogramación
+    // nunca corre una cuota hacia atrás.
+    private void validarDeltaDeReprogramacion(Integer periods, Integer days) {
+        boolean indicoPeriodos = periods != null;
+        boolean indicoDias = days != null;
+        boolean unicoYPositivo = indicoPeriodos != indicoDias
+                && (!indicoPeriodos || periods >= 1)
+                && (!indicoDias || days >= 1);
+        if (!unicoYPositivo) {
+            throw new IllegalArgumentException("Indicá periods o days (exactamente uno, mayor a 0)");
+        }
+    }
+
+    // Delta en períodos de la frecuencia (encadenando nextExpirationDate, la misma
+    // semántica del alta) o en días naturales.
+    private LocalDate correr(LocalDate vencimiento, Integer periods, Integer days, Payments frecuencia) {
+        if (days != null) {
+            return vencimiento.plusDays(days);
+        }
+        LocalDate corrido = vencimiento;
+        for (int periodo = 0; periodo < periods; periodo++) {
+            corrido = FeeScheduleCalculator.nextExpirationDate(corrido, frecuencia);
+        }
+        return corrido;
+    }
+
+    // La última cuota del plan es la de mayor número y su vencimiento es la fecha
+    // final esperada de la operación (S11).
+    private LocalDate vencimientoDeLaUltimaCuota(Sale sale) {
+        return sale.getFees().stream()
+                .filter(cuota -> cuota.getExpirationDate() != null)
+                .max(Comparator.comparing(Fee::getNumberFee, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(Fee::getExpirationDate)
+                .orElse(null);
+    }
+
+    private static boolean esLaMismaCuota(Fee una, Fee otra) {
+        if (una == otra) {
+            return true;
+        }
+        return una.getId() != null && otra.getId() != null && una.getId().equals(otra.getId());
+    }
+
+    @Override
+    @Transactional
     public Fee getFeeById(Long feeId) {
         Fee fee = feeRepository.findById(feeId)
                 .orElseThrow(() -> new EntityNotFoundException("Cuota no encontrada con ID: " + feeId));
@@ -319,26 +369,6 @@ public class FeeServices implements IFeeServices {
         }
         sale.getFees().removeAll(sobrantes);
         sobrantes.forEach(feeRepository::delete);
-    }
-
-    // Al borrar una cuota los numeros quedaban con huecos (1, 2, 4): se renumeran
-    // las que quedan por orden de vencimiento (el mismo orden en que se muestran)
-    // para que el cronograma siga leyendose 1..N. Es solo la etiqueta: no toca
-    // montos, fechas, saldo ni el log de cobros.
-    private void renumerarCuotas(Sale sale) {
-        List<Fee> ordenadas = new ArrayList<>(sale.getFees());
-        ordenadas.sort(Comparator
-                .comparing(Fee::getExpirationDate, Comparator.nullsLast(Comparator.naturalOrder()))
-                .thenComparing(f -> f.getNumberFee() == null ? 0 : f.getNumberFee()));
-
-        int numero = 1;
-        for (Fee cuota : ordenadas) {
-            if (!Integer.valueOf(numero).equals(cuota.getNumberFee())) {
-                cuota.setNumberFee(numero);
-                feeRepository.save(cuota);
-            }
-            numero++;
-        }
     }
 
     // Agenda una cuota impaga por la deuda restante: se usa cuando la venta queda

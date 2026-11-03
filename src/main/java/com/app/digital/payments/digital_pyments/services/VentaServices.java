@@ -300,8 +300,6 @@ public class VentaServices implements IVentaServices {
         newSale.setQuiantityFees(quantityFees);
         newSale.setAmountFee(amountFee);
         newSale.setRemainingAmount(totalPrice);
-        newSale.setFinalPaymentDate(FeeScheduleCalculator.finalPaymentDate(
-                firstFeeDate, paymentType, quantityFees));
         newSale.setStatus(SaleStatus.ACTIVE);
 
         // El plan completo se materializa al crear la operación: cantidad de cuotas
@@ -325,6 +323,10 @@ public class VentaServices implements IVentaServices {
             vencimiento = FeeScheduleCalculator.nextExpirationDate(vencimiento, paymentType);
         }
         newSale.setFees(fees);
+
+        // La fecha final esperada es el vencimiento de la última cuota del plan
+        // (sin la fórmula -1 día que quedaba un día antes del último vencimiento).
+        newSale.setFinalPaymentDate(fees.get(fees.size() - 1).getExpirationDate());
 
         if (Boolean.TRUE.equals(saleDto.getPayFirstFee())) {
             BigDecimal montoPagado = saleDto.getFirstFeeAmount() != null

@@ -132,6 +132,15 @@ public class Sale{ // Ahora extiende PayableItem
     @Column(name = "cancel_reason", length = 300)
     private String cancelReason;
 
+    // Auditoría de la reprogramación en bloque: fecha y hora del último evento y
+    // cantidad de eventos. Una reprogramación es UN evento, sin importar cuántas
+    // cuotas se hayan corrido.
+    @Column(name = "reprogrammed_at")
+    private LocalDateTime reprogrammedAt;
+
+    @Column(name = "reprogram_count", columnDefinition = "integer default 0")
+    private Integer reprogramCount = 0;
+
     // Moneda (ISO 4217) congelada al crear la transacción: el monto nunca se
     // conviene, solo se etiqueta. Se asigna desde la config del negocio al crear
     // y NO se edita después. Nullable-safe por esquema legado (la UI usa la
@@ -435,6 +444,22 @@ public class Sale{ // Ahora extiende PayableItem
 
     public void setCancelReason(String cancelReason) {
         this.cancelReason = cancelReason;
+    }
+
+    public LocalDateTime getReprogrammedAt() {
+        return reprogrammedAt;
+    }
+
+    public void setReprogrammedAt(LocalDateTime reprogrammedAt) {
+        this.reprogrammedAt = reprogrammedAt;
+    }
+
+    public Integer getReprogramCount() {
+        return reprogramCount;
+    }
+
+    public void setReprogramCount(Integer reprogramCount) {
+        this.reprogramCount = reprogramCount;
     }
 
     public BigDecimal getInterestRate() {
