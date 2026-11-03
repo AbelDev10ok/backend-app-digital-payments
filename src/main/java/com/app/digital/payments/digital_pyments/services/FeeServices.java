@@ -23,6 +23,7 @@ import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IFeeServices;
+import com.app.digital.payments.digital_pyments.utils.FeePaymentAllocator;
 import com.app.digital.payments.digital_pyments.utils.FeeScheduleCalculator;
 import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
@@ -64,8 +65,6 @@ public class FeeServices implements IFeeServices {
             throw new IllegalArgumentException("No se puede eliminar la única cuota de una venta. Elimine la venta completa si es necesario.");
         }
 
-        BigDecimal saldoAnterior = sale.recalcularSaldo();
-
         sale.getFees().remove(fee);
         // El borrado de la cuota arrastra su log de pagos (cascade)
         feeRepository.delete(fee);
@@ -82,8 +81,6 @@ public class FeeServices implements IFeeServices {
             if (sale.getFees().stream().allMatch(f -> Boolean.TRUE.equals(f.getPaid()))) {
                 crearCuotaPorDeuda(sale);
             }
-            // Si el borrado movió la deuda, la cuota por cobrar la sigue
-            ajustarCuotaPendiente(sale, saldoAnterior);
             sale.setStatus(SaleStatus.ACTIVE);
             sale.setRealFinalDate(null);
         } else {
@@ -98,8 +95,9 @@ public class FeeServices implements IFeeServices {
         saleRepository.save(sale);
     }
 
-    // Registro de un cobro sobre una cuota: la cuota se cierra por el monto
-    // cobrado y, si queda saldo, se agenda la cuota siguiente. Reglas:
+    // Registro de un cobro: la plata entra por la cuota impaga más antigua y el
+    // excedente cascada a las siguientes, sin crear ni reprogramar cuotas y sin
+    // reescribir el monto programado de ninguna. Reglas:
     //  - El monto no puede superar el saldo restante de la venta.
     //  - No hay límite de pagos por día: se permite más de un cobro en la misma
     //    fecha (cada uno queda con su horario).
@@ -131,21 +129,19 @@ public class FeeServices implements IFeeServices {
 
         // El saldo se recalcula antes de validar: el tope del cobro es la deuda real
         // (total menos cobrado), no un número guardado que pueda estar viejo
-        BigDecimal saldoAnterior = sale.recalcularSaldo();
+        sale.recalcularSaldo();
 
         BigDecimal saldo = sale.getRemainingAmount() != null ? sale.getRemainingAmount() : BigDecimal.ZERO;
         if (amount.compareTo(saldo) > 0) {
             throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
         }
 
-        // La cuota se cierra por lo efectivamente cobrado: si el cobro fue menor
-        // al monto programado, el resto se reprograma en la cuota siguiente.
+        // El cobro se reparte desde la cuota impaga más antigua: la cuota nombrada
+        // sólo importa para las validaciones (cubrir deuda vieja no es un error).
         LocalDate fechaCobro = date != null ? date : LocalDate.now();
-        fee.setAmount(amount);
         // Si se backdatea la fecha, la hora guardada es la real del registro
-        Payment payment = new Payment(fee, amount, fechaCobro.atTime(LocalTime.now()), pm);
-        payment.setBusiness(sale.getBusiness());
-        fee.applyPayment(payment);
+        List<Fee> cuotasCobradas = FeePaymentAllocator.aplicar(
+                sale, amount, fechaCobro.atTime(LocalTime.now()), pm);
 
         // El saldo sale de los cobros registrados, no de una resta a mano
         sale.recalcularSaldo();
@@ -155,17 +151,14 @@ public class FeeServices implements IFeeServices {
             // La deuda quedo en cero: las cuotas impagas sobrantes ya no se cobran
             eliminarCuotasImpagasSobrantes(sale, fee);
         } else {
-            crearSiguienteCuota(sale, fee);
+            sale.setStatus(SaleStatus.ACTIVE);
         }
-        // La cuota que queda por cobrar sigue a la deuda: si el cobro la bajó, se
-        // agenda por el nuevo saldo (nunca por encima del valor de cuota)
-        ajustarCuotaPendiente(sale, saldoAnterior);
 
-        feeRepository.save(fee);
+        cuotasCobradas.forEach(feeRepository::save);
         saleRepository.save(sale);
 
         log.debug("Cobro registrado: cuota={} monto={} fecha={}", feeId, amount, fechaCobro);
-        return convertToFeeDto(fee);
+        return convertToFeeDto(cuotasCobradas.get(0));
     }
 
     // Edición de una cuota: fecha de vencimiento, fecha de pago y monto.
@@ -188,7 +181,7 @@ public class FeeServices implements IFeeServices {
         }
 
         // Saldo real antes de tocar nada (de paso, cura un saldo viejo guardado)
-        BigDecimal saldoAnterior = sale.recalcularSaldo();
+        sale.recalcularSaldo();
 
         if (newDataExpiration != null && !Objects.equals(newDataExpiration, fee.getExpirationDate())) {
             if (newDataExpiration.isBefore(sale.getDateCreation())) {
@@ -241,11 +234,8 @@ public class FeeServices implements IFeeServices {
             }
         }
 
-        // Editar una cuota cobrada mueve la deuda: la cuota por cobrar la sigue.
-        // Editar una cuota impaga no mueve la deuda, así que su monto se respeta
-        // (sólo se acota si quedó por encima de lo que se debe).
-        ajustarCuotaPendiente(sale, saldoAnterior);
-
+        // El plan es fijo: editar una cuota no re-deriva el monto programado de
+        // las impagas. Sólo cambia lo que se editó explícitamente.
         saleRepository.save(sale);
 
         return convertToFeeDto(fee);
@@ -310,17 +300,11 @@ public class FeeServices implements IFeeServices {
         }
     }
 
-    // Crea la cuota siguiente por el valor de cuota de la venta (sale.amountFee),
-    // sin pasarse del saldo: si queda menos deuda, la última cuota es por el resto.
-    private void crearSiguienteCuota(Sale sale, Fee feeCobrada) {
-        crearCuota(sale, feeCobrada, sale.montoProximaCuota());
-    }
-
     // Una venta sin deuda no necesita cuotas por cobrar: las cuotas impagas que
-    // quedaron planificadas (por ejemplo la que se agenda cuando se cobra menos que
-    // la cuota) se eliminan para que el cronograma no muestre algo que ya no hay que
-    // cobrar. No se tocan las cuotas que tengan algun cobro registrado (su plata no
-    // se puede borrar sola) ni la cuota que se esta editando en ese momento.
+    // quedaron planificadas y ya no representan deuda se eliminan para que el
+    // cronograma no muestre algo que ya no hay que cobrar. No se tocan las cuotas
+    // que tengan algun cobro registrado (su plata no se puede borrar sola) ni la
+    // cuota que se esta editando en ese momento.
     private void eliminarCuotasImpagasSobrantes(Sale sale, Fee excepto) {
         if (sale.getFees().stream().noneMatch(f -> Boolean.TRUE.equals(f.getPaid()))) {
             // Sin ninguna cuota cobrada no hay nada que limpiar (y la venta no puede
@@ -365,27 +349,6 @@ public class FeeServices implements IFeeServices {
                 .max(Comparator.comparing(Fee::getExpirationDate))
                 .orElseThrow(() -> new IllegalStateException("No hay cuotas para calcular la siguiente cuota"));
         crearCuota(sale, referencia, sale.montoProximaCuota());
-    }
-
-    // La cuota que queda por cobrar sigue a la deuda de la venta:
-    //  - si el saldo cambió, se re-deriva a min(valor de cuota, saldo): la cuota
-    //    sube o baja con la deuda (por ejemplo al editar el monto de una cobrada);
-    //  - si el saldo no cambió, se respeta el monto que se haya editado a mano en
-    //    esa cuota impaga, pero nunca por encima de esa misma cuenta: el saldo es
-    //    un techo, no se puede cobrar más de lo que se debe.
-    private void ajustarCuotaPendiente(Sale sale, BigDecimal saldoAnterior) {
-        Fee pendiente = sale.cuotaPendiente();
-        if (pendiente == null) {
-            return;
-        }
-        BigDecimal tope = sale.montoProximaCuota();
-        BigDecimal actual = pendiente.getAmount() != null ? pendiente.getAmount() : BigDecimal.ZERO;
-        boolean saldoCambio = saldoAnterior == null
-                || sale.getRemainingAmount().compareTo(saldoAnterior) != 0;
-        if (actual.compareTo(tope) != 0 && (saldoCambio || actual.compareTo(tope) > 0)) {
-            pendiente.setAmount(tope);
-            feeRepository.save(pendiente);
-        }
     }
 
     private void crearCuota(Sale sale, Fee feeReferencia, BigDecimal monto) {

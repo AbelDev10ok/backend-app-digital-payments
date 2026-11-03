@@ -28,7 +28,6 @@ import com.app.digital.payments.digital_pyments.mappers.SaleDocumentMapper;
 import com.app.digital.payments.digital_pyments.models.Business;
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
-import com.app.digital.payments.digital_pyments.models.Payment;
 import com.app.digital.payments.digital_pyments.models.Product;
 import com.app.digital.payments.digital_pyments.models.ProductType;
 import com.app.digital.payments.digital_pyments.models.ProductVariant;
@@ -49,6 +48,7 @@ import com.app.digital.payments.digital_pyments.repositories.ISaleDocumentReposi
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IVentaServices;
 import com.app.digital.payments.digital_pyments.utils.DocumentType;
+import com.app.digital.payments.digital_pyments.utils.FeePaymentAllocator;
 import com.app.digital.payments.digital_pyments.utils.FeeScheduleCalculator;
 import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
 import com.app.digital.payments.digital_pyments.utils.Payments;
@@ -304,14 +304,27 @@ public class VentaServices implements IVentaServices {
                 firstFeeDate, paymentType, quantityFees));
         newSale.setStatus(SaleStatus.ACTIVE);
 
+        // El plan completo se materializa al crear la operación: cantidad de cuotas
+        // pactada, vencimientos encadenados desde la primera fecha y monto de cuota.
+        // Al cobrar no se crea ni se reprograma ninguna cuota.
         List<Fee> fees = new ArrayList<>();
-        Fee primeraCuota = new Fee();
-        primeraCuota.setSale(newSale);
-        primeraCuota.setNumberFee(1);
-        primeraCuota.setExpirationDate(firstFeeDate);
-        primeraCuota.setPaid(false);
-        primeraCuota.setAmount(amountFee);
-        primeraCuota.setBusiness(newSale.getBusiness());
+        LocalDate vencimiento = firstFeeDate;
+        for (int numero = 1; numero <= quantityFees; numero++) {
+            Fee cuota = new Fee();
+            cuota.setSale(newSale);
+            cuota.setNumberFee(numero);
+            cuota.setExpirationDate(vencimiento);
+            cuota.setPaid(false);
+            // Al contado la única cuota cubre el total (precio unitario × cantidad);
+            // en cuotas, todas valen el monto de cuota pactado.
+            cuota.setAmount(kind == SaleKind.VENTA && paymentType == Payments.CONTADO
+                    ? totalPrice
+                    : amountFee);
+            cuota.setBusiness(newSale.getBusiness());
+            fees.add(cuota);
+            vencimiento = FeeScheduleCalculator.nextExpirationDate(vencimiento, paymentType);
+        }
+        newSale.setFees(fees);
 
         if (Boolean.TRUE.equals(saleDto.getPayFirstFee())) {
             BigDecimal montoPagado = saleDto.getFirstFeeAmount() != null
@@ -323,28 +336,19 @@ public class VentaServices implements IVentaServices {
             if (montoPagado.compareTo(newSale.getRemainingAmount()) > 0) {
                 throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
             }
-            // La cuota se cierra por lo cobrado y el cobro queda en el log de pagos
-            primeraCuota.setAmount(montoPagado);
-            Payment primerPago = new Payment(primeraCuota, montoPagado, LocalDateTime.now(), PaymentMethod.EFECTIVO);
-            primerPago.setBusiness(newSale.getBusiness());
-            primeraCuota.applyPayment(primerPago);
-            newSale.deductFromRemainingAmount(montoPagado);
-
-            if (newSale.getRemainingAmount().signum() > 0) {
-                Fee siguienteCuota = new Fee();
-                siguienteCuota.setSale(newSale);
-                siguienteCuota.setNumberFee(2);
-                siguienteCuota.setExpirationDate(FeeScheduleCalculator.nextExpirationDate(firstFeeDate, paymentType));
-                siguienteCuota.setPaid(false);
-                // Nunca por encima de lo que queda por cobrar: si la primera cuota
-                // se cobró por mas que el valor de cuota, la siguiente es por el resto
-                siguienteCuota.setAmount(newSale.montoProximaCuota());
-                siguienteCuota.setBusiness(newSale.getBusiness());
-                fees.add(siguienteCuota);
-            }
+            // El pago inicial entra por la misma cascada FIFO que cualquier cobro
+            FeePaymentAllocator.aplicar(newSale, montoPagado, LocalDateTime.now(), PaymentMethod.EFECTIVO);
         }
-        fees.add(primeraCuota);
-        newSale.setFees(fees);
+
+        // El saldo sale de los cobros registrados; con el pago inicial cubriendo
+        // todo el plan, la operación nace completada y con fecha final real.
+        newSale.recalcularSaldo();
+        if (newSale.getRemainingAmount().signum() <= 0) {
+            newSale.setStatus(SaleStatus.COMPLETED);
+            newSale.setRealFinalDate(LocalDate.now());
+        } else {
+            newSale.setStatus(SaleStatus.ACTIVE);
+        }
 
         // Descontar stock (V9): el stock es obligatorio y ya se validó que alcanza.
         if (kind == SaleKind.VENTA && variant.getStock() != null) {
@@ -435,12 +439,12 @@ public class VentaServices implements IVentaServices {
             throw new IllegalStateException("La venta ya está completada");
         }
 
-        Fee nextFee = sale.getFees().stream()
-                .filter(fee -> fee.getPaid() == null || !fee.getPaid())
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("No hay cuotas pendientes para completar la venta"));
+        Fee cuotaPendiente = sale.cuotaPendiente();
+        if (cuotaPendiente == null) {
+            throw new RuntimeException("No hay cuotas pendientes para completar la venta");
+        }
 
-        BigDecimal paid = amountPaid != null ? amountPaid : nextFee.getPendingAmount();
+        BigDecimal paid = amountPaid != null ? amountPaid : cuotaPendiente.getPendingAmount();
         if (paid == null || paid.signum() <= 0) {
             throw new IllegalArgumentException("El monto del pago debe ser mayor a cero");
         }
@@ -450,12 +454,11 @@ public class VentaServices implements IVentaServices {
             throw new IllegalArgumentException("El monto del pago no puede ser mayor al saldo restante de la venta");
         }
 
-        // La cuota se cierra por lo cobrado y el cobro queda en el log de pagos
-        nextFee.setAmount(paid);
-        Payment payment = new Payment(nextFee, paid, LocalDateTime.now(), PaymentMethod.EFECTIVO);
-        payment.setBusiness(sale.getBusiness());
-        nextFee.applyPayment(payment);
-        feeRepository.save(nextFee);
+        // El cobro entra por la cuota impaga más antigua y cascada al resto, sin
+        // reescribir el monto programado de ninguna cuota
+        List<Fee> cuotasCobradas = FeePaymentAllocator.aplicar(
+                sale, paid, LocalDateTime.now(), PaymentMethod.EFECTIVO);
+        cuotasCobradas.forEach(feeRepository::save);
 
         // El saldo sale de los cobros registrados, no de una resta a mano
         sale.recalcularSaldo();

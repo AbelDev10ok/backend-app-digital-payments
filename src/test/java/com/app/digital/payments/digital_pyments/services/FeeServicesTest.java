@@ -141,26 +141,21 @@ class FeeServicesTest {
     }
 
     @Test
-    void registerPaymentParcialCierraLaCuotaYCreaLaSiguiente() {
+    void registerPaymentParcialDejaLaCuotaAbiertaSinCrearCuotas() {
         when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
 
         FeeDto dto = feeServices.registerPayment(1L, new BigDecimal("50"), LocalDate.now(), "EFECTIVO");
 
-        // La cuota se cierra por lo efectivamente cobrado
-        assertEquals(Boolean.TRUE, dto.getPaid());
-        assertEquals(0, new BigDecimal("50").compareTo(dto.getAmount()));
+        // Un pago parcial no cierra la cuota ni crea cuotas nuevas: la cuota
+        // sigue abierta por su saldo y su monto programado no se reescribe
+        assertEquals(Boolean.FALSE, dto.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(dto.getAmount()));
         assertEquals(0, new BigDecimal("50").compareTo(dto.getPaidAmount()));
         assertEquals(0, new BigDecimal("50").compareTo(sale.getRemainingAmount()));
         assertEquals(SaleStatus.ACTIVE, sale.getStatus());
         assertEquals(1, fee.getPayments().size());
-
-        // La cuota nueva se agenda por el valor de cuota, nunca por encima del saldo
-        Fee siguiente = sale.getFees().stream()
-                .filter(f -> f.getNumberFee() == 2)
-                .findFirst()
-                .orElseThrow();
-        assertEquals(0, new BigDecimal("50").compareTo(siguiente.getAmount()));
-        assertEquals(Boolean.FALSE, siguiente.getPaid());
+        // El cronograma no crece: la única cuota del plan sigue siendo esta
+        assertEquals(1, sale.getFees().size());
     }
 
     @Test
@@ -193,49 +188,132 @@ class FeeServicesTest {
     @Test
     void registerPaymentPermiteCobrarMasQueElMontoDeLaCuota() {
         // El tope es la deuda de la venta, no el monto de la cuota: un cobro de
-        // 150 sobre una cuota de 100 la cierra por 150
+        // 150 sobre una cuota de 100 la cierra y el excedente cascada a la siguiente
         sale.setPriceTotal(new BigDecimal("300"));
+        Fee segunda = nuevaCuota(2L, 2, "100");
+        Fee tercera = nuevaCuota(3L, 3, "100");
+        sale.getFees().add(segunda);
+        sale.getFees().add(tercera);
         when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
 
         FeeDto dto = feeServices.registerPayment(1L, new BigDecimal("150"), LocalDate.now(), "EFECTIVO");
 
+        // La cuota 1 se cierra por su monto programado, sin reescribirlo
         assertEquals(Boolean.TRUE, dto.getPaid());
-        assertEquals(0, new BigDecimal("150").compareTo(dto.getAmount()));
+        assertEquals(0, new BigDecimal("100").compareTo(dto.getAmount()));
+        assertEquals(0, new BigDecimal("100").compareTo(fee.getPaidAmount()));
+        // El excedente de 50 entra en la cuota 2, que sigue abierta
+        assertEquals(Boolean.FALSE, segunda.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(segunda.getAmount()));
+        assertEquals(0, new BigDecimal("50").compareTo(segunda.getPaidAmount()));
+        // La 3 no se toca
+        assertEquals(0, tercera.getPaidAmount().signum());
         assertEquals(0, new BigDecimal("150").compareTo(sale.getRemainingAmount()));
+        assertEquals(SaleStatus.ACTIVE, sale.getStatus());
     }
 
     @Test
-    void registerPaymentCreaLaCuotaSiguientePorElMontoEstandarDeLaVenta() {
-        // Venta de 300 con cuota estandar de 100: al cobrar la cuota 1 la cuota
-        // nueva se genera por el monto estandar (no por el saldo restante)
+    void registerPaymentNoCreaCuotasNuevas() {
+        // El plan es fijo: cobrar no agenda cuotas nuevas ni siquiera dejando
+        // deuda pendiente (la agenda rodante se eliminó en esta etapa)
         sale.setAmountFee(new BigDecimal("100"));
         sale.setPriceTotal(new BigDecimal("300"));
         when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
 
         feeServices.registerPayment(1L, new BigDecimal("100"), LocalDate.now(), "EFECTIVO");
 
-        Fee siguiente = sale.getFees().stream()
-                .filter(f -> f.getNumberFee() == 2)
-                .findFirst()
-                .orElseThrow();
-        assertEquals(0, new BigDecimal("100").compareTo(siguiente.getAmount()));
+        assertEquals(Boolean.TRUE, fee.getPaid());
+        assertEquals(1, sale.getFees().size());
+        assertEquals(0, new BigDecimal("200").compareTo(sale.getRemainingAmount()));
     }
 
     @Test
-    void laUltimaCuotaNoSuperaElSaldoRestante() {
-        // Venta de 150 con cuota estandar de 100: al cobrar 100 quedan 50 de deuda,
-        // asi que la cuota que se agenda es por 50 y no por 100.
+    void cobrarNoAcotaElMontoDeLasCuotasImpagas() {
+        // Venta de 150 con cuotas de 100: al cobrar la primera, la cuota 2 sigue
+        // valiendo su monto programado (no se re-deriva del saldo)
         sale.setAmountFee(new BigDecimal("100"));
         sale.setPriceTotal(new BigDecimal("150"));
+        Fee segunda = nuevaCuota(2L, 2, "100");
+        sale.getFees().add(segunda);
         when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
 
         feeServices.registerPayment(1L, new BigDecimal("100"), LocalDate.now(), "EFECTIVO");
 
-        Fee siguiente = sale.getFees().stream()
-                .filter(f -> f.getNumberFee() == 2)
-                .findFirst()
-                .orElseThrow();
-        assertEquals(0, new BigDecimal("50").compareTo(siguiente.getAmount()));
+        assertEquals(Boolean.TRUE, fee.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(segunda.getAmount()));
+        assertEquals(Boolean.FALSE, segunda.getPaid());
+        assertEquals(0, new BigDecimal("50").compareTo(sale.getRemainingAmount()));
+    }
+
+    @Test
+    void registerPaymentDeUnaCuotaPosteriorCobraPrimeroLaMasAntigua() {
+        // Se pide cobrar la cuota 2 pero la 1 sigue impaga: la deuda vieja se
+        // cubre primero y no es un error (cascada FIFO)
+        sale.setPriceTotal(new BigDecimal("300"));
+        Fee segunda = nuevaCuota(2L, 2, "100");
+        Fee tercera = nuevaCuota(3L, 3, "100");
+        sale.getFees().add(segunda);
+        sale.getFees().add(tercera);
+        when(feeRepository.findById(2L)).thenReturn(java.util.Optional.of(segunda));
+
+        FeeDto dto = feeServices.registerPayment(2L, new BigDecimal("100"), LocalDate.now(), "EFECTIVO");
+
+        // El cobro entró en la cuota 1 (la más antigua), no en la nombrada
+        assertEquals(Integer.valueOf(1), dto.getNumberFee());
+        assertEquals(Boolean.TRUE, fee.getPaid());
+        assertEquals(Boolean.FALSE, segunda.getPaid());
+        assertEquals(0, segunda.getPaidAmount().signum());
+        assertEquals(0, new BigDecimal("200").compareTo(sale.getRemainingAmount()));
+    }
+
+    @Test
+    void cobrarLaDeudaCompletaEliminaLasCuotasImpagasSobrantes() {
+        // Cobrar el total de la venta cierra la operación y las cuotas impagas
+        // que ya no representan deuda desaparecen del cronograma
+        Fee sobrante = nuevaCuota(2L, 2, "100");
+        sale.getFees().add(sobrante);
+        when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+        feeServices.registerPayment(1L, new BigDecimal("100"), LocalDate.now(), "EFECTIVO");
+
+        assertEquals(SaleStatus.COMPLETED, sale.getStatus());
+        assertEquals(LocalDate.now(), sale.getRealFinalDate());
+        assertEquals(0, sale.getRemainingAmount().signum());
+        assertEquals(1, sale.getFees().size());
+        assertEquals(Boolean.TRUE, fee.getPaid());
+        verify(feeRepository).delete(sobrante);
+    }
+
+    @Test
+    void registerPaymentRechazaCuandoElPlanNoCubreElMontoSinAplicarNada() {
+        // Venta de 200 con una sola cuota impaga de 100 (el plan no cubre toda
+        // la deuda): un cobro de 150 no se puede asignar entero, así que se
+        // rechaza con error claro y sin dejar pagos a medias
+        sale.setPriceTotal(new BigDecimal("200"));
+        when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> feeServices.registerPayment(1L, new BigDecimal("150"), LocalDate.now(), "EFECTIVO"));
+
+        assertEquals("El plan de cuotas no cubre la deuda restante; revisá las cuotas de la operación",
+                error.getMessage());
+        assertEquals(0, new BigDecimal("200").compareTo(sale.getRemainingAmount()));
+        assertEquals(Boolean.FALSE, fee.getPaid());
+        assertEquals(0, fee.getPaidAmount().signum());
+        assertEquals(0, fee.getPayments().size());
+        verify(feeRepository, never()).save(any(Fee.class));
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    private Fee nuevaCuota(Long id, int numero, String monto) {
+        Fee cuota = new Fee();
+        cuota.setId(id);
+        cuota.setSale(sale);
+        cuota.setNumberFee(numero);
+        cuota.setAmount(new BigDecimal(monto));
+        cuota.setExpirationDate(LocalDate.of(2026, 8, 6).plusMonths(numero - 1L));
+        cuota.setPaid(false);
+        return cuota;
     }
 
     @Test
@@ -506,11 +584,16 @@ class FeeServicesTest {
         sale.setRemainingAmount(new BigDecimal("300"));
         sale.setAmountFee(new BigDecimal("100"));
         fee.setAmount(new BigDecimal("100"));
+        Fee cuota2 = nuevaCuota(2L, 2, "100");
+        Fee cuota3 = nuevaCuota(3L, 3, "100");
+        sale.getFees().add(cuota2);
+        sale.getFees().add(cuota3);
         when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
 
-        // 1) Cobro completo de la cuota 1: el saldo baja a 200 y se agenda la siguiente
+        // 1) Cobro completo de la cuota 1: el saldo baja a 200, sin cuotas nuevas
         feeServices.registerPayment(1L, new BigDecimal("100"), LocalDate.now(), "EFECTIVO");
         assertEquals(0, new BigDecimal("200").compareTo(sale.getRemainingAmount()));
+        assertEquals(3, sale.getFees().size());
 
         // 2) Editar el monto de la cuota cobrada (100 → 50): la diferencia vuelve al saldo
         feeServices.postponeFee(1L, null, null, new BigDecimal("50"));
@@ -749,11 +832,10 @@ class FeeServicesTest {
         }
     }
 
-    // La cuota impaga que se muestra en Cobros de hoy / Cuotas también es el tope
-    // de lo que se puede cobrar: su monto nunca queda por encima de la deuda de la
-    // venta (antes se mostraba el nominal y el cobro prometía más de lo que se debía).
+    // El plan de cuotas es fijo: editar una cuota nunca re-deriva el monto
+    // programado de las impagas (el tope de lo que se cobra sigue siendo la deuda).
     @Nested
-    class CuotaPendienteSigueALaDeuda {
+    class PostponeFeeNoRecalculaMontosDelPlan {
 
         private Fee pagada;
         private Fee pendiente;
@@ -791,21 +873,21 @@ class FeeServicesTest {
         }
 
         @Test
-        void alSubirElMontoDeUnaCuotaCobradaLaImpagaBajaAlSaldoRestante() {
+        void alSubirElMontoDeUnaCuotaCobradaLaImpagaConservaSuMontoProgramado() {
             // Se re-declara que en la cuota 1 se cobraron 180 en vez de 100: la deuda
-            // queda en 20 y la cuota por cobrar pasa a valer 20, no 100
+            // baja a 20, pero la cuota impaga sigue agendada por su monto del plan
             feeServices.postponeFee(1L, null, null, new BigDecimal("180"));
 
             assertEquals(0, new BigDecimal("20").compareTo(sale.getRemainingAmount()));
-            assertEquals(0, new BigDecimal("20").compareTo(pendiente.getAmount()));
+            assertEquals(0, new BigDecimal("100").compareTo(pendiente.getAmount()));
         }
 
         @Test
-        void alVolverABajarLaCuotaCobradaLaImpagaVuelveAlValorDeCuota() {
+        void alVolverABajarLaCuotaCobradaLaImpagaSigueEnSuMonto() {
             feeServices.postponeFee(1L, null, null, new BigDecimal("180"));
             feeServices.postponeFee(1L, null, null, new BigDecimal("100"));
 
-            // Deuda 100 otra vez y la cuota por cobrar vuelve a su valor de cuota
+            // Deuda 100 otra vez y la cuota por cobrar sigue valiendo 100
             assertEquals(0, new BigDecimal("100").compareTo(sale.getRemainingAmount()));
             assertEquals(0, new BigDecimal("100").compareTo(pendiente.getAmount()));
         }
@@ -821,16 +903,16 @@ class FeeServicesTest {
         }
 
         @Test
-        void unaCuotaImpagaPorEncimaDeLaDeudaSeAcotaAlSaldo() {
+        void unaCuotaImpagaPorEncimaDeLaDeudaConservaSuMontoProgramado() {
             // Dato viejo: la cuota 1 quedó cobrada por 150 (deuda 50) y la cuota
-            // impaga sigue valiendo 100. Al guardarla se acota a lo que se debe.
+            // impaga sigue valiendo 100. El plan no se re-acota al saldo.
             pagada.setAmount(new BigDecimal("150"));
             pagada.setPaidAmount(new BigDecimal("150"));
 
             feeServices.postponeFee(2L, null, null, new BigDecimal("100"));
 
             assertEquals(0, new BigDecimal("50").compareTo(sale.getRemainingAmount()));
-            assertEquals(0, new BigDecimal("50").compareTo(pendiente.getAmount()));
+            assertEquals(0, new BigDecimal("100").compareTo(pendiente.getAmount()));
         }
     }
 

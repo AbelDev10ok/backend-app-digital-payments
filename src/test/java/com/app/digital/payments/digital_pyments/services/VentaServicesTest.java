@@ -201,10 +201,22 @@ class VentaServicesTest {
         verify(salesRepository).save(captor.capture());
         Sale saved = captor.getValue();
         assertEquals(0, saved.getRemainingAmount().compareTo(new BigDecimal("200")));
-        assertEquals(1, saved.getFees().size());
         assertEquals("Televisor", saved.getDescriptionProduct());
         // Snapshot del precio unitario del catálogo (referencia en cuotas)
         assertEquals(0, new BigDecimal("150").compareTo(saved.getUnitPrice()));
+        // El plan completo queda materializado al crear la operación: 2 cuotas
+        // mensuales de 100, impagas y con los vencimientos encadenados
+        assertEquals(2, saved.getFees().size());
+        Fee primera = saved.getFees().get(0);
+        Fee segunda = saved.getFees().get(1);
+        assertEquals(Integer.valueOf(1), primera.getNumberFee());
+        assertEquals(Integer.valueOf(2), segunda.getNumberFee());
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getAmount()));
+        assertEquals(0, new BigDecimal("100").compareTo(segunda.getAmount()));
+        assertEquals(Boolean.FALSE, primera.getPaid());
+        assertEquals(Boolean.FALSE, segunda.getPaid());
+        assertEquals(LocalDate.now(), primera.getExpirationDate());
+        assertEquals(LocalDate.now().plusMonths(1), segunda.getExpirationDate());
     }
 
     @Test
@@ -835,6 +847,8 @@ class VentaServicesTest {
         assertEquals(Integer.valueOf(1), saved.getQuiantityFees());
         assertEquals(1, saved.getFees().size());
         assertEquals(0, new BigDecimal("60").compareTo(saved.getAmountFee()));
+        // La única cuota del contado cubre el total (precio unitario × cantidad)
+        assertEquals(0, new BigDecimal("120").compareTo(saved.getFees().get(0).getAmount()));
         // Costo del negocio = costo unitario × cantidad = 30 × 2
         assertEquals(0, new BigDecimal("60").compareTo(saved.getCost()));
     }
@@ -1074,19 +1088,51 @@ class VentaServicesTest {
         return sale;
     }
 
+    private Sale ventaConDosCuotasImpagas(BigDecimal total, BigDecimal amountCuota) {
+        Sale sale = new Sale();
+        sale.setId(1L);
+        sale.setPriceTotal(total);
+        sale.setAmountFee(amountCuota);
+        sale.setRemainingAmount(total);
+        sale.setStatus(SaleStatus.ACTIVE);
+        Business business = new Business();
+        business.setId(1L);
+        sale.setBusiness(business);
+        Fee primera = new Fee();
+        primera.setId(1L);
+        primera.setSale(sale);
+        primera.setNumberFee(1);
+        primera.setAmount(amountCuota);
+        primera.setPaid(false);
+        Fee segunda = new Fee();
+        segunda.setId(2L);
+        segunda.setSale(sale);
+        segunda.setNumberFee(2);
+        segunda.setAmount(amountCuota);
+        segunda.setPaid(false);
+        sale.setFees(new java.util.ArrayList<>(java.util.List.of(primera, segunda)));
+        return sale;
+    }
+
     @Test
     void markPrestamoAsCompletedPermiteMontoDistintoAlValorDeLaCuota() {
-        Sale sale = ventaConCuotaImpaga(new BigDecimal("200"), new BigDecimal("100"));
+        Sale sale = ventaConDosCuotasImpagas(new BigDecimal("200"), new BigDecimal("100"));
         when(salesRepository.findById(1L)).thenReturn(Optional.of(sale));
 
         ventaServices.markPrestamoAsCompleted(1L, new BigDecimal("150"));
 
         assertEquals(0, new BigDecimal("50").compareTo(sale.getRemainingAmount()));
         assertEquals(SaleStatus.ACTIVE, sale.getStatus());
-        assertEquals(0, new BigDecimal("150").compareTo(sale.getFees().get(0).getPaidAmount()));
-        // La cuota se cierra por lo cobrado
-        assertEquals(Boolean.TRUE, sale.getFees().get(0).getPaid());
-        assertEquals(0, new BigDecimal("150").compareTo(sale.getFees().get(0).getAmount()));
+        Fee primera = sale.getFees().get(0);
+        // La primera cuota se cierra por su monto programado, sin reescribirlo
+        assertEquals(Boolean.TRUE, primera.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getAmount()));
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getPaidAmount()));
+        // El excedente de 50 cascada a la segunda cuota, que sigue abierta
+        Fee segunda = sale.getFees().get(1);
+        assertEquals(Boolean.FALSE, segunda.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(segunda.getAmount()));
+        assertEquals(0, new BigDecimal("50").compareTo(segunda.getPaidAmount()));
     }
 
     @Test
@@ -1456,6 +1502,8 @@ class VentaServicesTest {
         dto.setVariant(1L);
         dto.setPayments("SEMANAL");
         dto.setQuantityFees(4);
+        dto.setDateSale(LocalDate.of(2026, 9, 1));
+        dto.setFirstFeeDate(LocalDate.of(2026, 9, 1));
 
         SaleResponseDto result = ventaServices.createVenta(dto);
 
@@ -1467,6 +1515,15 @@ class VentaServicesTest {
         Sale saved = captor.getValue();
         assertEquals(Payments.SEMANAL, saved.getTypePayments());
         assertEquals(Integer.valueOf(4), saved.getQuiantityFees());
+        // Las 4 cuotas nacen con el alta, encadenadas cada 7 días
+        assertEquals(4, saved.getFees().size());
+        for (int i = 0; i < saved.getFees().size(); i++) {
+            Fee cuota = saved.getFees().get(i);
+            assertEquals(Integer.valueOf(i + 1), cuota.getNumberFee());
+            assertEquals(LocalDate.of(2026, 9, 1).plusWeeks(i), cuota.getExpirationDate());
+            assertEquals(0, new BigDecimal("100").compareTo(cuota.getAmount()));
+            assertEquals(Boolean.FALSE, cuota.getPaid());
+        }
     }
 
     @Test
@@ -1481,6 +1538,8 @@ class VentaServicesTest {
         dto.setVariant(1L);
         dto.setPayments("QUINCENAL");
         dto.setQuantityFees(6);
+        dto.setDateSale(LocalDate.of(2026, 9, 1));
+        dto.setFirstFeeDate(LocalDate.of(2026, 9, 1));
 
         SaleResponseDto result = ventaServices.createVenta(dto);
 
@@ -1492,6 +1551,15 @@ class VentaServicesTest {
         Sale saved = captor.getValue();
         assertEquals(Payments.QUINCENAL, saved.getTypePayments());
         assertEquals(Integer.valueOf(6), saved.getQuiantityFees());
+        // Las 6 cuotas nacen con el alta, encadenadas cada 15 días
+        assertEquals(6, saved.getFees().size());
+        for (int i = 0; i < saved.getFees().size(); i++) {
+            Fee cuota = saved.getFees().get(i);
+            assertEquals(Integer.valueOf(i + 1), cuota.getNumberFee());
+            assertEquals(LocalDate.of(2026, 9, 1).plusDays(15L * i), cuota.getExpirationDate());
+            assertEquals(0, new BigDecimal("100").compareTo(cuota.getAmount()));
+            assertEquals(Boolean.FALSE, cuota.getPaid());
+        }
     }
 
     @Test
@@ -1525,22 +1593,89 @@ class VentaServicesTest {
         ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
         verify(salesRepository).save(captor.capture());
         Sale saved = captor.getValue();
-        // 2 fees: [siguienteCuota (impaga), primeraCuota (pagada)]
-        assertEquals(2, saved.getFees().size());
-        // La primera en la lista es la siguiente (impaga, numero 2)
-        Fee siguiente = saved.getFees().get(0);
-        assertEquals(Boolean.FALSE, siguiente.getPaid());
-        assertEquals(Integer.valueOf(2), siguiente.getNumberFee());
-        // La cuota siguiente se genera por el monto estandar de la venta
-        assertEquals(0, new BigDecimal("100").compareTo(siguiente.getAmount()));
-        // La segunda es la primera cuota: queda cerrada por lo cobrado
-        Fee primera = saved.getFees().get(1);
+        // El plan completo queda materializado: 3 cuotas de 100
+        assertEquals(3, saved.getFees().size());
+        // El pago inicial de 200 se aplica en cascada sobre las cuotas 1 y 2,
+        // sin reescribir el monto programado de ninguna
+        Fee primera = saved.getFees().get(0);
         assertEquals(Boolean.TRUE, primera.getPaid());
         assertEquals(Integer.valueOf(1), primera.getNumberFee());
-        assertEquals(0, new BigDecimal("200").compareTo(primera.getAmount()));
-        assertEquals(0, new BigDecimal("200").compareTo(primera.getPaidAmount()));
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getAmount()));
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getPaidAmount()));
+        Fee segunda = saved.getFees().get(1);
+        assertEquals(Boolean.TRUE, segunda.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(segunda.getAmount()));
+        // La tercera queda intacta, impaga
+        Fee tercera = saved.getFees().get(2);
+        assertEquals(Boolean.FALSE, tercera.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(tercera.getAmount()));
+        assertEquals(0, tercera.getPaidAmount().signum());
         // Saldo restante = 300 - 200 = 100
         assertEquals(0, new BigDecimal("100").compareTo(saved.getRemainingAmount()));
+    }
+
+    @Test
+    void createVentaConPayFirstFeePagaLaPrimeraCuotaYDejaElRestoImpagado() throws Exception {
+        when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> {
+            Sale s = inv.getArgument(0);
+            s.setId(1L);
+            return s;
+        });
+        prepararProducto(1L, "Producto", new BigDecimal("150"));
+        SaleRequestDto dto = dtoVenta("VENTA", "Producto");
+        dto.setVariant(1L);
+        dto.setPayFirstFee(true);
+        dto.setQuantityFees(3);
+        dto.setFirstFeeAmount(new BigDecimal("100"));
+
+        ventaServices.createVenta(dto);
+
+        ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
+        verify(salesRepository).save(captor.capture());
+        Sale saved = captor.getValue();
+        assertEquals(3, saved.getFees().size());
+        // La primera cuota queda cerrada por lo cobrado
+        Fee primera = saved.getFees().get(0);
+        assertEquals(Boolean.TRUE, primera.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getAmount()));
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getPaidAmount()));
+        // Las otras dos siguen tal cual las dejó el alta
+        assertEquals(Boolean.FALSE, saved.getFees().get(1).getPaid());
+        assertEquals(Boolean.FALSE, saved.getFees().get(2).getPaid());
+        assertEquals(0, saved.getFees().get(1).getPaidAmount().signum());
+        assertEquals(0, new BigDecimal("200").compareTo(saved.getRemainingAmount()));
+    }
+
+    @Test
+    void createVentaConPrimeraCuotaParcialDejaLaCuotaAbierta() throws Exception {
+        when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> {
+            Sale s = inv.getArgument(0);
+            s.setId(1L);
+            return s;
+        });
+        prepararProducto(1L, "Producto", new BigDecimal("150"));
+        SaleRequestDto dto = dtoVenta("VENTA", "Producto");
+        dto.setVariant(1L);
+        dto.setPayFirstFee(true);
+        dto.setQuantityFees(3); // total 300, cuota de 100
+        dto.setFirstFeeAmount(new BigDecimal("60")); // menos que la cuota
+
+        SaleResponseDto result = ventaServices.createVenta(dto);
+
+        assertEquals(SaleStatus.ACTIVE.name(), result.getStatus());
+
+        ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
+        verify(salesRepository).save(captor.capture());
+        Sale saved = captor.getValue();
+        Fee primera = saved.getFees().get(0);
+        // Un pago parcial no cierra la cuota ni reescribe su monto programado:
+        // queda abierta por su saldo (100 - 60 = 40)
+        assertEquals(Boolean.FALSE, primera.getPaid());
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getAmount()));
+        assertEquals(0, new BigDecimal("60").compareTo(primera.getPaidAmount()));
+        assertEquals(0, new BigDecimal("40").compareTo(primera.getPendingAmount()));
+        assertEquals(0, new BigDecimal("240").compareTo(saved.getRemainingAmount()));
+        assertEquals(Boolean.FALSE, saved.getFees().get(1).getPaid());
     }
 
     @Test
@@ -1565,14 +1700,15 @@ class VentaServicesTest {
         ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
         verify(salesRepository).save(captor.capture());
         Sale saved = captor.getValue();
-        // Solo 1 fee (pagada) porque remaining = 0, no se genera segunda
-        assertEquals(1, saved.getFees().size());
-        assertEquals(Boolean.TRUE, saved.getFees().get(0).getPaid());
-        assertEquals(Integer.valueOf(1), saved.getFees().get(0).getNumberFee());
+        // El plan completo nace materializado y el pago inicial lo cubre entero
+        assertEquals(2, saved.getFees().size());
+        assertTrue(saved.getFees().stream().allMatch(f -> Boolean.TRUE.equals(f.getPaid())));
+        assertEquals(0, saved.getRemainingAmount().signum());
+        assertNotNull(saved.getRealFinalDate());
     }
 
     @Test
-    void createVentaConPrimeraCuotaParcialAcotaLaCuotaSiguienteAlSaldo() throws Exception {
+    void createVentaConPrimeraCuotaParcialAplicaElExcedenteEnCascada() throws Exception {
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> {
             Sale s = inv.getArgument(0);
             s.setId(1L);
@@ -1583,19 +1719,24 @@ class VentaServicesTest {
         dto.setVariant(1L);
         dto.setPayFirstFee(true);
         dto.setQuantityFees(3); // total 300, cuota de 100
-        dto.setFirstFeeAmount(new BigDecimal("250")); // se cobra mas que la cuota
+        dto.setFirstFeeAmount(new BigDecimal("250")); // cubre dos cuotas y media
 
         ventaServices.createVenta(dto);
 
         ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
         verify(salesRepository).save(captor.capture());
         Sale saved = captor.getValue();
-        // Queda debiendo 50: la cuota siguiente se agenda por esa deuda, no por 100
+        // El pago de 250 cascada: cuotas 1 y 2 cerradas y la 3 con 50 cobrados
+        assertEquals(3, saved.getFees().size());
+        assertEquals(Boolean.TRUE, saved.getFees().get(0).getPaid());
+        assertEquals(Boolean.TRUE, saved.getFees().get(1).getPaid());
+        Fee tercera = saved.getFees().get(2);
+        assertEquals(Boolean.FALSE, tercera.getPaid());
+        // El monto programado de la cuota 3 no se toca: sigue valiendo 100 y lo
+        // cobrado (50) vive en su acumulado
+        assertEquals(0, new BigDecimal("100").compareTo(tercera.getAmount()));
+        assertEquals(0, new BigDecimal("50").compareTo(tercera.getPaidAmount()));
         assertEquals(0, new BigDecimal("50").compareTo(saved.getRemainingAmount()));
-        Fee siguiente = saved.getFees().get(0);
-        assertEquals(Boolean.FALSE, siguiente.getPaid());
-        assertEquals(Integer.valueOf(2), siguiente.getNumberFee());
-        assertEquals(0, new BigDecimal("50").compareTo(siguiente.getAmount()));
     }
 
     // --- Vendedor sellado de la operación ---
