@@ -6,5 +6,6 @@ public enum FeeStatus {
     UPCOMING,    // Cuotas pendientes que aun no vencen
     PAID,        // Cuotas pagadas
     POSTPONED,   // Cuotas pospuestas
-    DELAYED      // Cuotas atrasadas
+    DELAYED,     // Cuotas atrasadas
+    A_COBRAR     // Impagas con vencimiento dentro de los proximos 30 dias (incluye vencidas y de hoy)
 }

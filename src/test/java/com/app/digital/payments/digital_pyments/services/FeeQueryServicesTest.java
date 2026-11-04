@@ -4,12 +4,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Path;
+import jakarta.persistence.criteria.Root;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -119,6 +127,59 @@ class FeeQueryServicesTest {
     void getCuotasRechazaFiltroPostponed() {
         assertThrows(IllegalArgumentException.class,
                 () -> feeQueryServices.getCuotas(FeeStatus.POSTPONED, null, null, null, PageRequest.of(0, 20)));
+    }
+
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    void getCuotasACobrarNoSeRechazaYAplicaElFiltroDeImpagasHasta30Dias() {
+        Page<CuotaListItemDto> page = feeQueryServices.getCuotas(FeeStatus.A_COBRAR, null, null, null,
+                PageRequest.of(0, 20));
+
+        // A_COBRAR es un estado valido de la agenda (el unico rechazado es POSTPONED)
+        assertEquals(1, page.getContent().size());
+
+        ArgumentCaptor<Specification<Fee>> captor = ArgumentCaptor.forClass(Specification.class);
+        verify(feeRepository).findAll(captor.capture(), any(Pageable.class));
+
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Root root = mock(Root.class);
+        Path impaga = mock(Path.class);
+        Path vencimiento = mock(Path.class);
+        when(root.get("sale")).thenReturn(mock(Path.class));
+        when(root.get("paid")).thenReturn(impaga);
+        when(root.get("expirationDate")).thenReturn(vencimiento);
+
+        captor.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
+
+        // La agenda excluye lo ya cobrado...
+        verify(cb).isFalse(impaga);
+        // ...y no pasa de hoy + 30 dias; sin piso, entran vencidas y de hoy
+        verify(cb).lessThanOrEqualTo(vencimiento, LocalDate.now().plusDays(30));
+        verify(cb, never()).greaterThan(any(Expression.class), any(Comparable.class));
+        verify(cb, never()).greaterThanOrEqualTo(any(Expression.class), any(Comparable.class));
+    }
+
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    void getCuotasPendingSigueListandoTodasLasImpagasSinLimiteDeDias() {
+        Page<CuotaListItemDto> page = feeQueryServices.getCuotas(FeeStatus.PENDING, null, null, null,
+                PageRequest.of(0, 20));
+        assertEquals(1, page.getContent().size());
+
+        ArgumentCaptor<Specification<Fee>> captor = ArgumentCaptor.forClass(Specification.class);
+        verify(feeRepository).findAll(captor.capture(), any(Pageable.class));
+
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Root root = mock(Root.class);
+        Path impaga = mock(Path.class);
+        when(root.get("sale")).thenReturn(mock(Path.class));
+        when(root.get("paid")).thenReturn(impaga);
+
+        captor.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
+
+        // PENDING no cambia con la agenda: todas las impagas, sin recorte por vencimiento
+        verify(cb).isFalse(impaga);
+        verify(cb, never()).lessThanOrEqualTo(any(Expression.class), any(Comparable.class));
     }
 
     @Test

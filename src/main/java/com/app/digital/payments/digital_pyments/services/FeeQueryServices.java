@@ -102,6 +102,12 @@ public class FeeQueryServices implements IFeeQueryServices {
                         predicates.add(cb.isFalse(root.get("paid")));
                         predicates.add(cb.greaterThan(root.get("expirationDate"), hoy));
                     }
+                    case A_COBRAR -> {
+                        // Agenda por cobrar: impagas con vencimiento dentro de los proximos
+                        // 30 dias; sin piso de fecha, entran vencidas y de hoy.
+                        predicates.add(cb.isFalse(root.get("paid")));
+                        predicates.add(cb.lessThanOrEqualTo(root.get("expirationDate"), hoy.plusDays(30)));
+                    }
                 }
             }
 
