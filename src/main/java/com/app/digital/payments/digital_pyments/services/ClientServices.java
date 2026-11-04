@@ -20,6 +20,7 @@ import jakarta.persistence.criteria.Predicate;
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientDto;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientRequestDto;
+import com.app.digital.payments.digital_pyments.models.dtos.SellerDeactivationRequest;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IClientServices;
@@ -112,7 +113,7 @@ public class ClientServices implements IClientServices {
 
     @Override
     @Transactional
-    public void deshabilitarClientVendedor(Long id) {
+    public void deshabilitarClientVendedor(Long id, SellerDeactivationRequest request) {
         Client cliente = clientRepository.findById(id)
             .orElseThrow(() -> new RuntimeException("Cliente no encontrado con ID: " + id));
         TenantGuard.verificar(cliente.getBusiness() != null ? cliente.getBusiness().getId() : null);
@@ -122,14 +123,70 @@ public class ClientServices implements IClientServices {
             throw new RuntimeException("El cliente con ID: " + id + " no es un vendedor.");
         }
 
-        // validacion : impedir deshabilitar si tiene clientes asociados
-        if (clientRepository.countBySellerId(id) > 0) {
-            throw new RuntimeException("El vendedor aún tiene clientes asignados. Reasigna o desasigna sus clientes antes de deshabilitarlo.");
-        }
+        // La cartera se resuelve antes de la baja: deshabilitar a un vendedor
+        // con clientes asignados dejaba al negocio sin forma de hacerlo sin
+        // editar cliente por cliente.
+        vaciarCarteraDelVendedor(cliente, request);
 
         // Deshabilitamos al cliente como vendedor
         cliente.setSeller(false);
         clientRepository.save(cliente);
+    }
+
+    /**
+     * Decide el destino de toda la cartera de un vendedor que se deshabilita.
+     * Se traspasa completa a otro vendedor o queda sin vendedor (la cobra el
+     * negocio, fila "Sin vendedor"); nunca se deja a medias. Sin clientes no
+     * hay nada que resolver.
+     */
+    private void vaciarCarteraDelVendedor(Client vendedor, SellerDeactivationRequest request) {
+        List<Client> cartera = clientRepository.findCarteraBySellerId(
+                vendedor.getId(), TenantContext.requireBusinessId());
+        if (cartera.isEmpty()) {
+            return;
+        }
+
+        Long destinoId = request != null ? request.getTransferToSellerId() : null;
+        boolean dejarSinVendedor = request != null && Boolean.TRUE.equals(request.getLeaveClientsUnassigned());
+
+        if (destinoId != null && dejarSinVendedor) {
+            throw new RuntimeException("Elegí una sola opción para la cartera: traspasarla a otro vendedor o dejarla sin vendedor.");
+        }
+        if (destinoId == null && !dejarSinVendedor) {
+            throw new RuntimeException("El vendedor tiene " + cartera.size()
+                    + " clientes en cartera. Elegí si traspasarlos a otro vendedor o dejarlos sin vendedor antes de deshabilitarlo.");
+        }
+
+        if (dejarSinVendedor) {
+            cartera.forEach(cliente -> cliente.setSeller(null));
+            clientRepository.saveAll(cartera);
+            return;
+        }
+
+        if (destinoId.equals(vendedor.getId())) {
+            throw new RuntimeException("El vendedor no puede traspasarse la cartera a sí mismo.");
+        }
+
+        Client destino = clientRepository.findById(destinoId)
+            .orElseThrow(() -> new RuntimeException("Vendedor no encontrado con ID: " + destinoId));
+        TenantGuard.verificar(destino.getBusiness() != null ? destino.getBusiness().getId() : null);
+        if (!destino.isSeller()) {
+            throw new RuntimeException("El cliente con ID: " + destinoId + " no es un vendedor válido.");
+        }
+        // Si el destino está en la cartera que se vacía, quedaría apuntando a un
+        // vendedor deshabilitado: primero hay que sacarlo de esa cartera.
+        boolean destinoEnLaCartera = cartera.stream()
+                .anyMatch(cliente -> cliente.getId().equals(destinoId));
+        if (destinoEnLaCartera) {
+            throw new RuntimeException("El vendedor destino está en la cartera de " + vendedor.getName()
+                    + ". Reasignalo a otro vendedor antes de traspasar la cartera.");
+        }
+
+        for (Client cliente : cartera) {
+            verificarSinCiclos(cliente.getId(), destino);
+            cliente.setSeller(destino);
+        }
+        clientRepository.saveAll(cartera);
     }
 
     @Transactional
@@ -210,7 +267,10 @@ public class ClientServices implements IClientServices {
         Client cliente = clientRepository.findById(id)
             .orElseThrow(() -> new RuntimeException("Cliente no encontrado con ID: " + id));
         TenantGuard.verificar(cliente.getBusiness() != null ? cliente.getBusiness().getId() : null);
-        return convertirADTO(cliente);
+        ClientDto dto = convertirADTO(cliente);
+        // Sólo el detalle paga el count: el listado no lo necesita.
+        dto.setClientesEnCartera(cliente.isSeller() ? clientRepository.countBySellerId(id) : 0L);
+        return dto;
     }
     
     @Override

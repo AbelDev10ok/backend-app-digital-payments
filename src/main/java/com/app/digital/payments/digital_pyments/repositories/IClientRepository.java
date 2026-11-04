@@ -108,6 +108,12 @@ public interface IClientRepository extends JpaRepository<Client, Long>, JpaSpeci
     // obtener clientes por vendedor
     List<Client> findBySellerId(Long sellerId);
 
+    // Cartera completa de un vendedor, acotada al negocio autenticado: se
+    // resuelve entera antes de deshabilitarlo para no dejarla apuntando a un
+    // vendedor inactivo (y para no tocar clientes de otro negocio).
+    @Query("SELECT c FROM Client c WHERE c.seller.id = :sellerId AND c.business.id = :businessId")
+    List<Client> findCarteraBySellerId(@Param("sellerId") Long sellerId, @Param("businessId") Long businessId);
+
     // ----- Métricas por vendedor -----
 
     // Cartera actual: cuántos clientes tiene asignados cada vendedor. Incluye

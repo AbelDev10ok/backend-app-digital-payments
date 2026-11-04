@@ -575,12 +575,11 @@ public class VentaServices implements IVentaServices {
             existingSale.setUnitPrice(variant.getPrice());
             existingSale.setCost(variant.getCost().multiply(BigDecimal.valueOf(cantidad)));
         }
+        // La autoría comercial NO se edita: se sella al crear la operación y
+        // sobrevive a cualquier edición. La cartera del cliente tampoco la
+        // reescribe; cambiar de vendedor una operación ya creada no es una
+        // corrección soportada (se anula y se vuelve a crear si hace falta).
         existingSale.setDescriptionProduct(description);
-
-        // El vendedor de la operación se corrige sólo desde acá (deliberado):
-        // reasignar la cartera del cliente no reescribe la autoría histórica.
-        // Null = sin atribuir.
-        existingSale.setSeller(resolverVendedorDeOperacion(sale.getSellerId(), existingSale.getClient()));
 
         salesRepository.save(existingSale);
     }

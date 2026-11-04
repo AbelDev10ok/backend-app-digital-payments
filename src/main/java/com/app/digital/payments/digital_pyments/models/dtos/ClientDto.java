@@ -17,6 +17,9 @@ public class ClientDto {
     private String dni;
     // Deuda por moneda ISO 4217: las monedas distintas nunca se suman
     private Map<String, BigDecimal> deudaTotal;
+    // Clientes en cartera cuando este cliente es vendedor: lo usa el diálogo de
+    // baja para decir cuántos clientes hay que resolver antes de deshabilitarlo.
+    private Long clientesEnCartera;
 
     public ClientDto() {
     }
@@ -110,5 +113,13 @@ public class ClientDto {
 
     public void setDeudaTotal(Map<String, BigDecimal> deudaTotal) {
         this.deudaTotal = deudaTotal;
+    }
+
+    public Long getClientesEnCartera() {
+        return clientesEnCartera;
+    }
+
+    public void setClientesEnCartera(Long clientesEnCartera) {
+        this.clientesEnCartera = clientesEnCartera;
     }
 }

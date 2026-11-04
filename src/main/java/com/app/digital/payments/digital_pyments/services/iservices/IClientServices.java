@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 
 import com.app.digital.payments.digital_pyments.models.dtos.ClientDto;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientRequestDto;
+import com.app.digital.payments.digital_pyments.models.dtos.SellerDeactivationRequest;
 
 
 public interface IClientServices {
@@ -35,7 +36,7 @@ public interface IClientServices {
 
     void habilitarClientVendedor(Long id);
     
-    void deshabilitarClientVendedor(Long id);
+    void deshabilitarClientVendedor(Long id, SellerDeactivationRequest request);
 
     List<ClientDto> obtenerTodosLosVendedoresConClientesActivos();
 
