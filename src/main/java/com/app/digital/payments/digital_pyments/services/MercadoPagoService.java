@@ -47,7 +47,7 @@ public class MercadoPagoService {
     public MercadoPagoService(
             @Value("${app.mercadopago.access-token:}") String accessToken,
             @Value("${app.mercadopago.webhook-secret:}") String webhookSecret,
-            @Value("${app.frontend-url:https://numerate-crumpet-oxymoron.ngrok-free.dev}") String frontendUrl,
+            @Value("${app.frontend-url:}") String frontendUrl,
             @Value("${app.mercadopago.webhook-require-signature:true}") boolean webhookRequireSignature,
             RestTemplate restTemplate,
             ObjectMapper objectMapper) {
