@@ -371,6 +371,57 @@ public class VentaQueryServices implements IVentasQuerysServices {
         }
         dto.setPorTipoProducto(new ArrayList<>(byKind.values()));
 
+        // ----- Ventas de productos del mes por categoría del catálogo -----
+        // Solo VENTA: un préstamo no vende productos. La categoría viaja sellada
+        // en la operación; las ventas legadas sin categoría van a "Sin categoría"
+        // para que las filas no pierdan datos. Orden por unidades (ranking por
+        // monto cruzaría monedas).
+        Map<Long, DashboardStatsDto.CategorySales> byCategory = new LinkedHashMap<>();
+        for (Object[] row : saleRepository.findProductSalesByCategoryInMonthGrouped(year, month, SaleKind.VENTA)) {
+            if (!coincide((String) row[2], filtro)) {
+                continue;
+            }
+            Long categoryId = row[0] != null ? ((Number) row[0]).longValue() : null;
+            DashboardStatsDto.CategorySales entry = byCategory.get(categoryId);
+            if (entry == null) {
+                entry = new DashboardStatsDto.CategorySales();
+                entry.setCategoryId(categoryId);
+                entry.setCategoryName(categoryId == null ? "Sin categoría" : (String) row[1]);
+                byCategory.put(categoryId, entry);
+            }
+            entry.setTotalVentas(entry.getTotalVentas() + (row[3] != null ? ((Number) row[3]).longValue() : 0));
+            entry.setUnidades(entry.getUnidades() + (row[4] != null ? ((Number) row[4]).longValue() : 0));
+            CurrencyUtils.acumular(entry.getTotalVendido(), (String) row[2], row[5] instanceof BigDecimal monto ? monto : null);
+        }
+        List<DashboardStatsDto.CategorySales> categorias = new ArrayList<>(byCategory.values());
+        categorias.sort(Comparator.comparingLong(DashboardStatsDto.CategorySales::getUnidades).reversed()
+                .thenComparing(entry -> entry.getCategoryName() == null ? "" : entry.getCategoryName()));
+        dto.setPorCategoriaProducto(categorias);
+
+        // ----- Productos del catálogo más vendidos del mes (top 5) -----
+        Map<Long, DashboardStatsDto.TopProduct> byProduct = new LinkedHashMap<>();
+        for (Object[] row : saleRepository.findTopProductsByUnitsInMonthGrouped(year, month, SaleKind.VENTA)) {
+            if (!coincide((String) row[2], filtro)) {
+                continue;
+            }
+            Long productId = ((Number) row[0]).longValue();
+            DashboardStatsDto.TopProduct entry = byProduct.get(productId);
+            if (entry == null) {
+                entry = new DashboardStatsDto.TopProduct();
+                entry.setProductId(productId);
+                entry.setProductName((String) row[1]);
+                byProduct.put(productId, entry);
+            }
+            entry.setTotalVentas(entry.getTotalVentas() + (row[3] != null ? ((Number) row[3]).longValue() : 0));
+            entry.setUnidades(entry.getUnidades() + (row[4] != null ? ((Number) row[4]).longValue() : 0));
+            CurrencyUtils.acumular(entry.getTotalVendido(), (String) row[2], row[5] instanceof BigDecimal monto ? monto : null);
+        }
+        List<DashboardStatsDto.TopProduct> productos = new ArrayList<>(byProduct.values());
+        productos.sort(Comparator.comparingLong(DashboardStatsDto.TopProduct::getUnidades).reversed()
+                .thenComparing(Comparator.comparingLong(DashboardStatsDto.TopProduct::getTotalVentas).reversed())
+                .thenComparing(entry -> entry.getProductName() == null ? "" : entry.getProductName()));
+        dto.setTopProductos(productos.subList(0, Math.min(5, productos.size())));
+
         // ----- Clientes (conteos globales: no dependen de la moneda) -----
         dto.getClientes().setTotalClientes(clientRepository.count());
         dto.getClientes().setActivos(clientRepository.countActiveClients());

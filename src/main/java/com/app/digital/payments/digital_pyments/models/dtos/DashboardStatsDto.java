@@ -25,6 +25,10 @@ public class DashboardStatsDto {
     private List<Monthly> serie12Meses = new ArrayList<>();
     private List<TopClient> topClientes = new ArrayList<>();
     private List<ProductTypeSales> porTipoProducto = new ArrayList<>();
+    /** Ventas de productos (solo VENTA) del mes, por categoría del catálogo */
+    private List<CategorySales> porCategoriaProducto = new ArrayList<>();
+    /** Productos del catálogo con más unidades vendidas en el mes */
+    private List<TopProduct> topProductos = new ArrayList<>();
     private Clientes clientes = new Clientes();
 
     public DashboardStatsDto() {
@@ -92,6 +96,22 @@ public class DashboardStatsDto {
 
     public void setPorTipoProducto(List<ProductTypeSales> porTipoProducto) {
         this.porTipoProducto = porTipoProducto;
+    }
+
+    public List<CategorySales> getPorCategoriaProducto() {
+        return porCategoriaProducto;
+    }
+
+    public void setPorCategoriaProducto(List<CategorySales> porCategoriaProducto) {
+        this.porCategoriaProducto = porCategoriaProducto;
+    }
+
+    public List<TopProduct> getTopProductos() {
+        return topProductos;
+    }
+
+    public void setTopProductos(List<TopProduct> topProductos) {
+        this.topProductos = topProductos;
     }
 
     public Clientes getClientes() {
@@ -379,6 +399,111 @@ public class DashboardStatsDto {
 
         public void setTotalVentas(long totalVentas) {
             this.totalVentas = totalVentas;
+        }
+
+        public Map<String, BigDecimal> getTotalVendido() {
+            return totalVendido;
+        }
+
+        public void setTotalVendido(Map<String, BigDecimal> totalVendido) {
+            this.totalVendido = totalVendido;
+        }
+    }
+
+    /**
+     * Ventas de productos (kind VENTA) del mes agrupadas por categoría del
+     * catálogo. La categoría nula corresponde a registros legados sin
+     * categoría sellada; el servicio la etiqueta para que la fila se entienda.
+     */
+    public static class CategorySales {
+        private Long categoryId;
+        private String categoryName;
+        private long totalVentas;
+        private long unidades;
+        private Map<String, BigDecimal> totalVendido = new LinkedHashMap<>();
+
+        public Long getCategoryId() {
+            return categoryId;
+        }
+
+        public void setCategoryId(Long categoryId) {
+            this.categoryId = categoryId;
+        }
+
+        public String getCategoryName() {
+            return categoryName;
+        }
+
+        public void setCategoryName(String categoryName) {
+            this.categoryName = categoryName;
+        }
+
+        public long getTotalVentas() {
+            return totalVentas;
+        }
+
+        public void setTotalVentas(long totalVentas) {
+            this.totalVentas = totalVentas;
+        }
+
+        public long getUnidades() {
+            return unidades;
+        }
+
+        public void setUnidades(long unidades) {
+            this.unidades = unidades;
+        }
+
+        public Map<String, BigDecimal> getTotalVendido() {
+            return totalVendido;
+        }
+
+        public void setTotalVendido(Map<String, BigDecimal> totalVendido) {
+            this.totalVendido = totalVendido;
+        }
+    }
+
+    /**
+     * Producto base del catálogo con más unidades vendidas en el mes (una fila
+     * por producto, sumando sus variantes/SKU).
+     */
+    public static class TopProduct {
+        private Long productId;
+        private String productName;
+        private long totalVentas;
+        private long unidades;
+        private Map<String, BigDecimal> totalVendido = new LinkedHashMap<>();
+
+        public Long getProductId() {
+            return productId;
+        }
+
+        public void setProductId(Long productId) {
+            this.productId = productId;
+        }
+
+        public String getProductName() {
+            return productName;
+        }
+
+        public void setProductName(String productName) {
+            this.productName = productName;
+        }
+
+        public long getTotalVentas() {
+            return totalVentas;
+        }
+
+        public void setTotalVentas(long totalVentas) {
+            this.totalVentas = totalVentas;
+        }
+
+        public long getUnidades() {
+            return unidades;
+        }
+
+        public void setUnidades(long unidades) {
+            this.unidades = unidades;
         }
 
         public Map<String, BigDecimal> getTotalVendido() {

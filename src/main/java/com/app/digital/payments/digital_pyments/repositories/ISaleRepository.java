@@ -384,6 +384,29 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
             "GROUP BY s.kind, s.currency")
     List<Object[]> findSalesByKindInMonthGrouped(@Param("year") int year, @Param("month") int month);
 
+    // Ventas de productos del mes agrupadas por categoría del catálogo y moneda:
+    // filas (categoriaId, categoría, moneda, ventas, unidades, vendido). La
+    // categoría nula (registros legados sin categoría sellada) llega como null
+    // y el servicio la etiqueta "Sin categoría" para que la fila se entienda.
+    @Query("SELECT pt.id, pt.name, s.currency, COUNT(s), SUM(s.quantity), SUM(s.priceTotal - s.refundAmount) " +
+            "FROM Sale s LEFT JOIN s.productType pt " +
+            "WHERE s.status != 'CANCELED' AND s.kind = :kind " +
+            "AND YEAR(s.dateCreation) = :year AND MONTH(s.dateCreation) = :month " +
+            "GROUP BY pt.id, pt.name, s.currency")
+    List<Object[]> findProductSalesByCategoryInMonthGrouped(@Param("year") int year, @Param("month") int month,
+            @Param("kind") SaleKind kind);
+
+    // Productos del catálogo más vendidos del mes: filas (productoId, nombre,
+    // moneda, ventas, unidades, vendido). Solo ventas con variante: los
+    // registros legados sin SKU no tienen producto del catálogo que rankear.
+    @Query("SELECT p.id, p.name, s.currency, COUNT(s), SUM(s.quantity), SUM(s.priceTotal - s.refundAmount) " +
+            "FROM Sale s JOIN s.variant v JOIN v.product p " +
+            "WHERE s.status != 'CANCELED' AND s.kind = :kind " +
+            "AND YEAR(s.dateCreation) = :year AND MONTH(s.dateCreation) = :month " +
+            "GROUP BY p.id, p.name, s.currency")
+    List<Object[]> findTopProductsByUnitsInMonthGrouped(@Param("year") int year, @Param("month") int month,
+            @Param("kind") SaleKind kind);
+
     // Conteos agrupados por moneda: el filtro del dashboard debe acotar también
     // las cantidades, no solo los montos
     @Query("SELECT s.currency, s.status, COUNT(s) FROM Sale s " +
