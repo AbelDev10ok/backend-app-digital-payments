@@ -38,6 +38,8 @@ import com.app.digital.payments.digital_pyments.utils.SaleStatus;
  * que le siguen, en períodos de la frecuencia o en días naturales, sin tocar las
  * cobradas, las anteriores ni los montos, y sellando un solo evento de auditoría
  * por llamada. S11: la fecha final pasa a ser el vencimiento de la última cuota.
+ * S13d: posponer una sola cuota es el mismo evento de auditoría y también
+ * recalcula la fecha final del plan.
  */
 class FeeReprogramacionTest {
 
@@ -364,5 +366,67 @@ class FeeReprogramacionTest {
         verify(saleRepository).save(sale);
         assertNotNull(sale.getReprogrammedAt());
         assertTrue(!sale.getReprogrammedAt().isAfter(LocalDateTime.now()));
+    }
+
+    // ----- S13d: posponer una sola cuota también audita y recalcula el plan -----
+
+    @Test
+    void posponerUnaCuotaSellaUnEventoDeAuditoriaYRecalculaLaFechaFinal() {
+        cuota(1L, 1, PRIMER_VENCIMIENTO, false);
+        Fee c2 = cuota(2L, 2, SEGUNDO_VENCIMIENTO, false);
+        cuota(3L, 3, TERCER_VENCIMIENTO, false);
+        sale.setFinalPaymentDate(TERCER_VENCIMIENTO);
+
+        feeServices.postponeFee(2L, SEGUNDO_VENCIMIENTO.plusDays(3), null, null);
+
+        assertEquals(SEGUNDO_VENCIMIENTO.plusDays(3), c2.getExpirationDate());
+        // La 3 sigue siendo la última cuota del plan: la fecha final no se mueve
+        assertEquals(TERCER_VENCIMIENTO, sale.getFinalPaymentDate());
+        assertNotNull(sale.getReprogrammedAt());
+        assertEquals(Integer.valueOf(1), sale.getReprogramCount());
+        verify(feeRepository).save(c2);
+        verify(saleRepository).save(sale);
+    }
+
+    @Test
+    void posponerLaFechaDeLaUltimaCuotaMueveLaFechaFinal() {
+        cuota(1L, 1, PRIMER_VENCIMIENTO, false);
+        cuota(2L, 2, SEGUNDO_VENCIMIENTO, false);
+        Fee c3 = cuota(3L, 3, TERCER_VENCIMIENTO, false);
+        sale.setFinalPaymentDate(TERCER_VENCIMIENTO);
+
+        feeServices.postponeFee(3L, TERCER_VENCIMIENTO.plusDays(10), null, null);
+
+        assertEquals(TERCER_VENCIMIENTO.plusDays(10), c3.getExpirationDate());
+        assertEquals(TERCER_VENCIMIENTO.plusDays(10), sale.getFinalPaymentDate());
+        assertEquals(Integer.valueOf(1), sale.getReprogramCount());
+        assertNotNull(sale.getReprogrammedAt());
+    }
+
+    @Test
+    void posponerUnaCuotaAcumulaLaCuentaDeAuditoriaExistente() {
+        cuota(1L, 1, PRIMER_VENCIMIENTO, false);
+        sale.setReprogramCount(2);
+
+        feeServices.postponeFee(1L, PRIMER_VENCIMIENTO.plusDays(1), null, null);
+
+        assertEquals(Integer.valueOf(3), sale.getReprogramCount());
+        assertNotNull(sale.getReprogrammedAt());
+    }
+
+    @Test
+    void unaFechaDeVencimientoInvalidaNoAuditaNiMueveNada() {
+        Fee c1 = cuota(1L, 1, PRIMER_VENCIMIENTO, false);
+        cuota(2L, 2, SEGUNDO_VENCIMIENTO, false);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> feeServices.postponeFee(1L, SEGUNDO_VENCIMIENTO, null, null));
+
+        assertEquals("Ya existe una cuota con esa fecha de expiración en esta venta", error.getMessage());
+        assertEquals(PRIMER_VENCIMIENTO, c1.getExpirationDate());
+        assertNull(sale.getReprogrammedAt());
+        assertEquals(Integer.valueOf(0), sale.getReprogramCount());
+        verify(feeRepository, never()).save(any(Fee.class));
+        verify(saleRepository, never()).save(any(Sale.class));
     }
 }

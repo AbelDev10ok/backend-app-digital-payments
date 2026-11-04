@@ -787,8 +787,10 @@ class FeeServicesTest {
         }
     }
 
-    // El plan de cuotas es fijo: editar una cuota nunca re-deriva el monto
-    // programado de las impagas (el tope de lo que se cobra sigue siendo la deuda).
+    // Los montos programados del plan sólo cambian con una edición explícita:
+    // editar una cuota cobrada ajusta su cobro y no toca las impagas, y editar la
+    // última impaga la acepta tal cual. El rebalanceo de una impaga anterior vive
+    // en PostponeFeeRebalanceoDeMontos.
     @Nested
     class PostponeFeeNoRecalculaMontosDelPlan {
 
@@ -868,6 +870,110 @@ class FeeServicesTest {
 
             assertEquals(0, new BigDecimal("50").compareTo(sale.getRemainingAmount()));
             assertEquals(0, new BigDecimal("100").compareTo(pendiente.getAmount()));
+        }
+    }
+
+    // S13c: editar el monto de una cuota impaga K es un rebalanceo explícito:
+    // K toma el monto nuevo y la última impaga del plan L absorbe el residuo
+    // (total - suma de los montos de las demás), para que la suma de los montos
+    // programados siga siendo el total de la operación. Si K ya es la última
+    // impaga su monto se acepta tal cual, y un residuo no positivo rechaza la
+    // edición sin haber tocado ningún monto.
+    @Nested
+    class PostponeFeeRebalanceoDeMontos {
+
+        private Fee cobrada;
+        private Fee aEditar;
+        private Fee ultimaImpaga;
+
+        @BeforeEach
+        void setUp() {
+            // Venta de 300 en 3 cuotas de 100: la 1 cobrada y la 2 y la 3 impagas
+            cobrada = cuotaDelPlan(1L, 1, "100", true);
+            aEditar = cuotaDelPlan(2L, 2, "100", false);
+            ultimaImpaga = cuotaDelPlan(3L, 3, "100", false);
+            sale.getFees().clear();
+            sale.getFees().add(cobrada);
+            sale.getFees().add(aEditar);
+            sale.getFees().add(ultimaImpaga);
+            sale.setPriceTotal(new BigDecimal("300"));
+            sale.setRemainingAmount(new BigDecimal("200"));
+            sale.setAmountFee(new BigDecimal("100"));
+            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(cobrada));
+            when(feeRepository.findById(2L)).thenReturn(java.util.Optional.of(aEditar));
+            when(feeRepository.findById(3L)).thenReturn(java.util.Optional.of(ultimaImpaga));
+        }
+
+        private Fee cuotaDelPlan(Long id, int numero, String monto, boolean pagada) {
+            Fee cuota = new Fee();
+            cuota.setId(id);
+            cuota.setSale(sale);
+            cuota.setNumberFee(numero);
+            cuota.setAmount(new BigDecimal(monto));
+            cuota.setExpirationDate(LocalDate.of(2026, 8, 6).plusMonths(numero - 1L));
+            cuota.setPaid(pagada);
+            if (pagada) {
+                cuota.setPaidAmount(new BigDecimal(monto));
+                cuota.setLastPaymentAt(LocalDateTime.of(2026, 8, 6, 10, 0));
+            } else {
+                cuota.setPaidAmount(BigDecimal.ZERO);
+            }
+            return cuota;
+        }
+
+        @Test
+        void editarUnaImpagaQueNoEsLaUltimaMueveLaUltimaAlResiduo() {
+            feeServices.postponeFee(2L, null, null, new BigDecimal("50"));
+
+            assertEquals(0, new BigDecimal("50").compareTo(aEditar.getAmount()));
+            // Residuo = 300 - (100 cobrada + 50 editada) = 150
+            assertEquals(0, new BigDecimal("150").compareTo(ultimaImpaga.getAmount()));
+            // La suma de los montos programados sigue siendo el total de la venta
+            BigDecimal suma = sale.getFees().stream()
+                    .map(Fee::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            assertEquals(0, sale.getPriceTotal().compareTo(suma));
+            // La deuda no se mueve: sigue siendo lo no cobrado (300 - 100)
+            assertEquals(0, new BigDecimal("200").compareTo(sale.getRemainingAmount()));
+            assertEquals(Boolean.FALSE, aEditar.getPaid());
+            verify(feeRepository).save(ultimaImpaga);
+        }
+
+        @Test
+        void unResiduoNoPositivoRechazaLaEdicionSinMutarNada() {
+            // 100 (cobrada) + 500 (el monto nuevo) ya supera el total de 300
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                    () -> feeServices.postponeFee(2L, null, null, new BigDecimal("500")));
+
+            assertEquals("El monto deja cuotas por debajo del total de la operación", error.getMessage());
+            assertEquals(0, new BigDecimal("100").compareTo(aEditar.getAmount()));
+            assertEquals(0, new BigDecimal("100").compareTo(ultimaImpaga.getAmount()));
+            assertEquals(0, new BigDecimal("200").compareTo(sale.getRemainingAmount()));
+            verify(feeRepository, never()).save(any(Fee.class));
+            verify(saleRepository, never()).save(any(Sale.class));
+        }
+
+        @Test
+        void editarLaUltimaImpagaSeAceptaTalCualSinRebalanceo() {
+            feeServices.postponeFee(3L, null, null, new BigDecimal("40"));
+
+            assertEquals(0, new BigDecimal("40").compareTo(ultimaImpaga.getAmount()));
+            // La editada ya era la última impaga: las demás quedan como estaban
+            assertEquals(0, new BigDecimal("100").compareTo(aEditar.getAmount()));
+            assertEquals(0, new BigDecimal("100").compareTo(cobrada.getAmount()));
+        }
+
+        @Test
+        void editarLaCuotaCobradaNoRebalanceaLaUltimaImpaga() {
+            // Camino de cuota cobrada: se ajusta el cobro registrado y los montos
+            // programados de las impagas quedan como estaban
+            feeServices.postponeFee(1L, null, null, new BigDecimal("80"));
+
+            assertEquals(0, new BigDecimal("80").compareTo(cobrada.getAmount()));
+            assertEquals(0, new BigDecimal("80").compareTo(cobrada.getPaidAmount()));
+            assertEquals(0, new BigDecimal("100").compareTo(aEditar.getAmount()));
+            assertEquals(0, new BigDecimal("100").compareTo(ultimaImpaga.getAmount()));
+            assertEquals(0, new BigDecimal("220").compareTo(sale.getRemainingAmount()));
         }
     }
 

@@ -118,8 +118,10 @@ public class FeeServices implements IFeeServices {
     }
 
     // Edición de una cuota: fecha de vencimiento, fecha de pago y monto.
-    //  - Cuota impaga: su monto es sólo el valor de esa cuota; la deuda no se mueve
-    //    porque todavía no entró plata.
+    //  - Cuota impaga: mover su vencimiento corre el final del plan y audita el
+    //    evento, igual que la reprogramación en bloque (S13d); editar su monto es
+    //    un rebalanceo explícito sobre la última impaga (S13c) y el resto del plan
+    //    no se re-deriva.
     //  - Cuota ya cobrada: editar el monto es re-declarar cuánto se cobró en ella y
     //    el cobro registrado se ajusta al nuevo monto, con lo que la deuda cambia
     //    por la diferencia.
@@ -147,7 +149,12 @@ public class FeeServices implements IFeeServices {
                 throw new IllegalArgumentException("Ya existe una cuota con esa fecha de expiración en esta venta");
             }
             fee.setExpirationDate(newDataExpiration);
+            // Mover un vencimiento también corre la fecha final esperada del plan y
+            // es un evento de reprogramación, como la reprogramación en bloque
+            sale.setFinalPaymentDate(vencimientoDeLaUltimaCuota(sale));
+            auditarReprogramacion(sale);
             feeRepository.save(fee);
+            saleRepository.save(sale);
             return convertToFeeDto(fee);
         }
 
@@ -163,9 +170,11 @@ public class FeeServices implements IFeeServices {
                 // La cuota ya estaba cobrada: se re-declara cuánto se cobró en ella
                 // y el cobro registrado se ajusta al nuevo monto
                 ajustarCobroRegistrado(sale, fee, amount);
+            } else {
+                // Cuota impaga: la editada toma el monto nuevo y la última impaga
+                // del plan absorbe el residuo (rebalanceo explícito, S13c)
+                rebalancearUltimaImpaga(sale, fee, amount);
             }
-            // En una cuota impaga el monto es sólo el valor de esa cuota: la deuda
-            // no se mueve porque todavía no entró plata
             fee.setAmount(amount);
             fee.refreshPaid();
         }
@@ -191,7 +200,8 @@ public class FeeServices implements IFeeServices {
         }
 
         // El plan es fijo: editar una cuota no re-deriva el monto programado de
-        // las impagas. Sólo cambia lo que se editó explícitamente.
+        // las impagas; el único monto que se mueve por su cuenta es el de la última
+        // impaga al editar otra impaga (rebalanceo explícito, S13c).
         saleRepository.save(sale);
 
         return convertToFeeDto(fee);
@@ -237,8 +247,7 @@ public class FeeServices implements IFeeServices {
         sale.setFinalPaymentDate(vencimientoDeLaUltimaCuota(sale));
 
         // Auditoría: una reprogramación es UN evento, mueva una o muchas cuotas
-        sale.setReprogrammedAt(LocalDateTime.now());
-        sale.setReprogramCount(sale.getReprogramCount() == null ? 1 : sale.getReprogramCount() + 1);
+        auditarReprogramacion(sale);
 
         movidas.forEach(feeRepository::save);
         saleRepository.save(sale);
@@ -282,6 +291,50 @@ public class FeeServices implements IFeeServices {
                 .max(Comparator.comparing(Fee::getNumberFee, Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(Fee::getExpirationDate)
                 .orElse(null);
+    }
+
+    // Auditoría de reprogramación: un evento por llamada, mueva una o muchas cuotas.
+    private void auditarReprogramacion(Sale sale) {
+        sale.setReprogrammedAt(LocalDateTime.now());
+        sale.setReprogramCount(sale.getReprogramCount() == null ? 1 : sale.getReprogramCount() + 1);
+    }
+
+    // S13c: la última impaga del plan (la de mayor número) es la que absorbe el
+    // rebalanceo de montos. Null si esa última impaga es la propia cuota editada:
+    // en ese caso su monto se acepta tal cual, sin rebalancear las anteriores.
+    private Fee ultimaImpagaRestante(Sale sale, Fee cuotaEditada) {
+        Fee ultimaImpaga = sale.getFees().stream()
+                .filter(cuota -> !Boolean.TRUE.equals(cuota.getPaid()))
+                .max(Comparator.comparing(Fee::getNumberFee, Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(null);
+        return ultimaImpaga == null || esLaMismaCuota(ultimaImpaga, cuotaEditada) ? null : ultimaImpaga;
+    }
+
+    // Al editar el monto de una cuota impaga, la última impaga del plan queda con
+    // el residuo (total - suma de los montos de las demás, con la editada ya en su
+    // monto nuevo), así la suma de los montos programados sigue siendo el total de
+    // la operación. Un residuo no positivo rechaza la edición sin tocar nada.
+    private void rebalancearUltimaImpaga(Sale sale, Fee cuotaEditada, BigDecimal nuevoMonto) {
+        Fee ultimaImpaga = ultimaImpagaRestante(sale, cuotaEditada);
+        if (ultimaImpaga == null) {
+            // La editada ya es la última impaga: su monto se acepta tal cual
+            return;
+        }
+        BigDecimal sumaDeLasDemas = sale.getFees().stream()
+                .filter(cuota -> !esLaMismaCuota(cuota, ultimaImpaga))
+                .map(cuota -> esLaMismaCuota(cuota, cuotaEditada) ? nuevoMonto : montoDe(cuota))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal total = sale.getPriceTotal() != null ? sale.getPriceTotal() : BigDecimal.ZERO;
+        BigDecimal residuo = total.subtract(sumaDeLasDemas);
+        if (residuo.signum() <= 0) {
+            throw new IllegalArgumentException("El monto deja cuotas por debajo del total de la operación");
+        }
+        ultimaImpaga.setAmount(residuo);
+        feeRepository.save(ultimaImpaga);
+    }
+
+    private static BigDecimal montoDe(Fee cuota) {
+        return cuota.getAmount() != null ? cuota.getAmount() : BigDecimal.ZERO;
     }
 
     private static boolean esLaMismaCuota(Fee una, Fee otra) {
