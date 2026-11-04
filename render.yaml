@@ -1,0 +1,55 @@
+# Blueprint de Render para el backend (Spring Boot + Docker).
+# Uso: Render Dashboard -> New -> Blueprint -> elegir el repo backend-app-digital-payments.
+# Spec: https://render.com/docs/blueprint-spec
+#
+# Al crear, Render pide el valor de las variables marcadas con "sync: false".
+# Las credenciales de Mercado Pago y del SMTP deben ser NUEVAS de produccion:
+# las que quedaron en el repo como defaults son de prueba/historicas.
+
+services:
+  - type: web
+    name: digital-pyments
+    runtime: docker
+    # Dockerfile en la raiz del repo; la app escucha el PORT que inyecta Render
+    # (el CMD del Dockerfile mapea PORT -> server.port).
+    plan: 0.5c-512mb # 0.5 CPU / 512 MB - US$7/mes. El plan free se duerme a los 15 min: no sirve para los webhooks de MP.
+    region: virginia # la mas cercana a Argentina (no hay Sao Paulo). No se puede cambiar despues.
+    # healthCheckPath: se omite a proposito. /actuator/health responde 403 (requiere auth)
+    # y Render marcaria el servicio como unhealthy.
+    autoDeployTrigger: commit # despliega en cada push a main (alternativa: checksPass, espera al CI)
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod # fail-fast: sin DB_PASSWORD ni JWT_SECRET la app no arranca
+      - key: DB_URL
+        sync: false # jdbc:postgresql://<host>:5432/<db>  (Render Postgres interno o Supabase con ?sslmode=require)
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false # minimo 64 caracteres (HS512). No usar generateValue: genera 256 bits (44 chars) y no alcanza.
+      - key: APP_CORS_ALLOWED_ORIGINS
+        sync: false # dominio del frontend, separado por comas si hay mas de uno
+      - key: APP_FRONTEND_URL
+        sync: false # dominio publico del frontend (back_url del checkout de MP)
+      - key: APP_WEBHOOK_URL
+        sync: false # https://<servicio>.onrender.com/api/webhooks/mercadopago (se conoce despues del primer deploy)
+      - key: APP_MERCADOPAGO_ACCESS_TOKEN
+        sync: false # credencial de PRODUCCION de MP
+      - key: APP_MERCADOPAGO_WEBHOOK_SECRET
+        sync: false # secreto de firma del webhook de PRODUCCION
+      - key: EMAIL_USERNAME
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false # app password nueva (la anterior quedo en el historial de git)
+
+# Base de datos (opcional): descomentar para que Render cree un Postgres de US$6/mes.
+# Alternativa gratis: Supabase (en DB_URL va la connection string del pooler de sesion
+# con formato jdbc:postgresql://<host>:5432/postgres?sslmode=require).
+# databases:
+#   - name: digital-pyments-db
+#     databaseName: digital_payments
+#     user: digital_pyments
+#     plan: 0.1c-256mb
+#     region: virginia
+#     postgresMajorVersion: "16"
