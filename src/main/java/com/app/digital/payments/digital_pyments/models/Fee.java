@@ -20,6 +20,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.Filter;
 
 import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
@@ -51,7 +52,8 @@ public class Fee {
     // saber si esta cubierta y sumar deuda sin traer la coleccion de pagos;
     // el log sigue siendo la fuente de verdad del dinero.
     // El default 0 permite agregar la columna sin reventar las filas existentes.
-    @Column(name = "paid_amount", columnDefinition = "numeric(12,2) default 0 not null")
+    @Column(name = "paid_amount", precision = 12, scale = 2, nullable = false)
+    @ColumnDefault("0")
     private BigDecimal paidAmount = BigDecimal.ZERO;
 
     @Column(nullable = false)
