@@ -36,6 +36,7 @@ import com.app.digital.payments.digital_pyments.models.dtos.ProductRequestDto;
 import com.app.digital.payments.digital_pyments.models.dtos.ProductVariantRequestDto;
 import com.app.digital.payments.digital_pyments.repositories.IAttributeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPriceChangeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
@@ -64,13 +65,16 @@ class ProductServicesTest {
     @Mock
     private IBusinessRepository businessRepository;
 
+    @Mock
+    private IPriceChangeRepository priceChangeRepository;
+
     private ProductServices productServices;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
         productServices = new ProductServices(productRepository, variantRepository, attributeRepository,
-                productTypeRepository, saleRepository, businessRepository);
+                productTypeRepository, saleRepository, businessRepository, priceChangeRepository);
         TenantContext.setBusinessId(NEGOCIO_ID);
     }
 
