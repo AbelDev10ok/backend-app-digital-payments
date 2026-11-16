@@ -66,11 +66,12 @@ public class ProductServices {
     private final ISaleRepository saleRepository;
     private final IBusinessRepository businessRepository;
     private final IPriceChangeRepository priceChangeRepository;
+    private final StockServices stockServices;
 
     public ProductServices(IProductRepository productRepository, IProductVariantRepository variantRepository,
             IAttributeRepository attributeRepository, IProductTypeRepository productTypeRepository,
             ISaleRepository saleRepository, IBusinessRepository businessRepository,
-            IPriceChangeRepository priceChangeRepository) {
+            IPriceChangeRepository priceChangeRepository, StockServices stockServices) {
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
         this.attributeRepository = attributeRepository;
@@ -78,6 +79,7 @@ public class ProductServices {
         this.saleRepository = saleRepository;
         this.businessRepository = businessRepository;
         this.priceChangeRepository = priceChangeRepository;
+        this.stockServices = stockServices;
     }
 
     @Transactional
@@ -130,6 +132,8 @@ public class ProductServices {
         product.setVariants(variantes);
 
         productRepository.save(product);
+        // El stock inicial queda explicado por el libro: saldo de apertura.
+        variantes.forEach(stockServices::registrarCargaInicialSiFalta);
         return variantes.stream().map(v -> ProductMapper.toDto(product, v)).toList();
     }
 
@@ -197,6 +201,8 @@ public class ProductServices {
 
         actualizarVariantes(product, request.getVariants(), atributos);
         productRepository.save(product);
+        // Las variantes nuevas de una edición también necesitan su saldo inicial.
+        product.getVariants().forEach(stockServices::registrarCargaInicialSiFalta);
         return true;
     }
 
@@ -360,8 +366,21 @@ public class ProductServices {
         if (precio.compareTo(costo) <= 0) {
             throw new IllegalArgumentException("El precio de venta debe ser mayor al costo");
         }
-        if (dto.getStock() == null || dto.getStock() < 0) {
-            throw new IllegalArgumentException("El stock es obligatorio y no puede ser negativo");
+        // El stock no se edita desde el producto: en el alta es el saldo inicial y
+        // en la edición sólo se acepta el valor actual. Los cambios van por el
+        // libro de movimientos; si no, editar el precio con el formulario abierto
+        // pisaría el stock con un valor viejo.
+        if (variante.getId() == null) {
+            if (dto.getStock() == null || dto.getStock() < 0) {
+                throw new IllegalArgumentException("El stock es obligatorio y no puede ser negativo");
+            }
+            variante.setStock(dto.getStock());
+        } else {
+            int actual = variante.getStock() != null ? variante.getStock() : 0;
+            if (dto.getStock() != null && !dto.getStock().equals(actual)) {
+                throw new IllegalArgumentException(
+                        "Para cambiar el stock usá un ajuste de inventario (stock actual: " + actual + ")");
+            }
         }
 
         String sku = limpiar(dto.getSku());
@@ -391,7 +410,6 @@ public class ProductServices {
         variante.setSku(sku);
         variante.setCost(costo);
         variante.setPrice(precio);
-        variante.setStock(dto.getStock());
         variante.setBarcode(barcode);
         variante.setActive(dto.getActive() == null || dto.getActive());
     }

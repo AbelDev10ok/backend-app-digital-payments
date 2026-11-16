@@ -15,6 +15,7 @@ import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
+import com.app.digital.payments.digital_pyments.repositories.IStockMovementRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleDocumentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.FeeStatus;
@@ -541,7 +542,8 @@ class VerifE234AltaTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         ventaServices = new VentaServices(salesRepository, clientRepository, feeRepository, productTypeRepository,
-                variantRepository, businessRepository, saleDocumentRepository);
+                variantRepository, businessRepository, saleDocumentRepository,
+                new StockServices(variantRepository, org.mockito.Mockito.mock(IStockMovementRepository.class)));
         TenantContext.setBusinessId(1L);
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> {
             Sale s = inv.getArgument(0);

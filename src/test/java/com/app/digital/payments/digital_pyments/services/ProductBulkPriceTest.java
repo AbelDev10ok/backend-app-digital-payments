@@ -41,6 +41,7 @@ import com.app.digital.payments.digital_pyments.repositories.IPriceChangeReposit
 import com.app.digital.payments.digital_pyments.repositories.IProductRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
+import com.app.digital.payments.digital_pyments.repositories.IStockMovementRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.TenantContext;
 
@@ -73,7 +74,8 @@ class ProductBulkPriceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         productServices = new ProductServices(productRepository, variantRepository, attributeRepository,
-                productTypeRepository, saleRepository, businessRepository, priceChangeRepository);
+                productTypeRepository, saleRepository, businessRepository, priceChangeRepository,
+                new StockServices(variantRepository, org.mockito.Mockito.mock(IStockMovementRepository.class)));
         TenantContext.setBusinessId(NEGOCIO_ID);
         negocio = new Business();
         negocio.setId(NEGOCIO_ID);
