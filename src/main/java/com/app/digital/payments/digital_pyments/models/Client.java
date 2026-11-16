@@ -30,7 +30,13 @@ public class Client {
     private String name;
     private String telefono;
     private String email;
-    private String direccion;
+    private String direccion; // calle y numero
+    // Domicilio estructurado: la calle y numero van en `direccion` (campo
+    // historico) y estas partes desambiguan localidad y provincia para la
+    // agenda de cobros y el remito.
+    private String localidad;
+    private String provincia;
+    private String codigoPostal;
     // El DNI es unico dentro del negocio (la unicidad global se relajo en V5)
     private String dni;
 
@@ -96,6 +102,30 @@ public class Client {
 
     public void setDireccion(String direccion) {
         this.direccion = direccion;
+    }
+
+    public String getLocalidad() {
+        return localidad;
+    }
+
+    public void setLocalidad(String localidad) {
+        this.localidad = localidad;
+    }
+
+    public String getProvincia() {
+        return provincia;
+    }
+
+    public void setProvincia(String provincia) {
+        this.provincia = provincia;
+    }
+
+    public String getCodigoPostal() {
+        return codigoPostal;
+    }
+
+    public void setCodigoPostal(String codigoPostal) {
+        this.codigoPostal = codigoPostal;
     }
 
     public List<Sale> getSales() {

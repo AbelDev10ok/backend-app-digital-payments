@@ -134,6 +134,46 @@ class ClientServicesTest {
         assertThrows(RuntimeException.class, () -> clientServices.createClient(dtoValido()));
     }
 
+    @Test
+    void createClientGuardaElDomicilioEstructurado() {
+        when(clientRepository.findByDni("12345678")).thenReturn(Optional.empty());
+        when(clientRepository.findByEmail("juan@example.com")).thenReturn(Optional.empty());
+        when(clientRepository.save(any(Client.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ClientRequestDto dto = dtoValido();
+        dto.setLocalidad("Rafael Calzada");
+        dto.setProvincia("Buenos Aires");
+        dto.setCodigoPostal("B1847");
+
+        ClientDto result = clientServices.createClient(dto);
+
+        assertEquals("Rafael Calzada", result.getLocalidad());
+        assertEquals("Buenos Aires", result.getProvincia());
+        assertEquals("B1847", result.getCodigoPostal());
+    }
+
+    @Test
+    void updateClientActualizaElDomicilioEstructurado() {
+        Client existente = new Client();
+        existente.setId(1L);
+        Business business = new Business();
+        business.setId(1L);
+        existente.setBusiness(business);
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(existente));
+        when(clientRepository.save(any(Client.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ClientRequestDto dto = dtoValido();
+        dto.setLocalidad("Rafael Calzada");
+        dto.setProvincia("Buenos Aires");
+        dto.setCodigoPostal("B1847");
+
+        ClientDto result = clientServices.updateClient(1L, dto);
+
+        assertEquals("Rafael Calzada", result.getLocalidad());
+        assertEquals("Buenos Aires", result.getProvincia());
+        assertEquals("B1847", result.getCodigoPostal());
+    }
+
     private Client clienteVendedor() {
         Client cliente = new Client();
         cliente.setId(1L);

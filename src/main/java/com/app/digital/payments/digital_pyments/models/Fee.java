@@ -71,6 +71,17 @@ public class Fee {
     @Column(name = "payment_method")
     private PaymentMethod paymentMethod;
 
+    // Ultimo recordatorio de pago que el negocio registro haber enviado por
+    // WhatsApp (el envio es manual: abrir el chat cuenta como recordatorio).
+    @Column(name = "last_reminded_at")
+    private LocalDateTime lastRemindedAt;
+
+    // Cuantas veces se le reclamo esta cuota al cliente (auditoria de gestion).
+    // El default 0 permite agregar la columna sin reventar las filas existentes.
+    @Column(name = "reminder_count", nullable = false)
+    @ColumnDefault("0")
+    private Integer reminderCount = 0;
+
     // El log de cobros de la cuota (parciales y varios por día)
     @OneToMany(mappedBy = "fee", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Payment> payments = new ArrayList<>();
@@ -172,6 +183,22 @@ public class Fee {
 
     public void setPaymentMethod(PaymentMethod paymentMethod) {
         this.paymentMethod = paymentMethod;
+    }
+
+    public LocalDateTime getLastRemindedAt() {
+        return lastRemindedAt;
+    }
+
+    public void setLastRemindedAt(LocalDateTime lastRemindedAt) {
+        this.lastRemindedAt = lastRemindedAt;
+    }
+
+    public Integer getReminderCount() {
+        return reminderCount;
+    }
+
+    public void setReminderCount(Integer reminderCount) {
+        this.reminderCount = reminderCount;
     }
 
     public List<Payment> getPayments() {

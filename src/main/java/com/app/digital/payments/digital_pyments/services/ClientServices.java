@@ -74,6 +74,9 @@ public class ClientServices implements IClientServices {
         cliente.setTelefono(request.getTelefono());
         cliente.setEmail(request.getEmail());
         cliente.setDireccion(request.getDireccion());
+        cliente.setLocalidad(request.getLocalidad());
+        cliente.setProvincia(request.getProvincia());
+        cliente.setCodigoPostal(request.getCodigoPostal());
         cliente.setDni(request.getDni());
         cliente.setBusiness(businessRepository.getReferenceById(negocioId));
 
@@ -339,6 +342,9 @@ public class ClientServices implements IClientServices {
         cliente.setTelefono(request.getTelefono());
         cliente.setEmail(request.getEmail());
         cliente.setDireccion(request.getDireccion());
+        cliente.setLocalidad(request.getLocalidad());
+        cliente.setProvincia(request.getProvincia());
+        cliente.setCodigoPostal(request.getCodigoPostal());
         cliente.setDni(request.getDni());
         
         Client clienteActualizado = clientRepository.save(cliente);
@@ -464,6 +470,9 @@ public class ClientServices implements IClientServices {
         // Id del vendedor asignado: la edición lo usa para no perder la cartera
         // (antes sólo viajaba el nombre y guardar sin tocar el campo la borraba).
         dto.setSellerId(cliente.getSeller() != null ? cliente.getSeller().getId() : null);
+        dto.setLocalidad(cliente.getLocalidad());
+        dto.setProvincia(cliente.getProvincia());
+        dto.setCodigoPostal(cliente.getCodigoPostal());
         return dto;
     }
 

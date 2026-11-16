@@ -52,11 +52,13 @@ public class FeeController {
 
     /**
      * Agenda de cobros del dia: cuotas que vencen hoy + vencidas, con resumen.
+     * `sellerId` filtra por la cartera del cliente: quien lo atiende es quien cobra.
      */
     @GetMapping("/collections/today")
     public ResponseEntity<CobrosHoyResponseDto> getCobrosDeHoy(
-            @RequestParam(required = false) LocalDate date) {
-        return ResponseEntity.ok(feeQueryServices.getCobrosDeHoy(date));
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false) Long sellerId) {
+        return ResponseEntity.ok(feeQueryServices.getCobrosDeHoy(date, sellerId));
     }
 
     @PostMapping("/collects-fee/{feeId}/pay")
@@ -96,6 +98,16 @@ public class FeeController {
             FeeDto updatedFee = feeServices.postponeFee(feeId, newDateExpiration, newDatePayment, amount);
             return ResponseEntity.ok(new ApiResponse("Cuota pospuesta correctamente", HttpStatus.OK, updatedFee));
 
+    }
+
+    /**
+     * Registra que se le reclamo la cuota al cliente por WhatsApp (envio manual).
+     * La agenda usa la marca para saber a quien ya se le recordo y no repetirlo.
+     */
+    @PostMapping("/fee/{feeId}/reminder")
+    public ResponseEntity<ApiResponse> marcarRecordatorio(@PathVariable Long feeId) {
+        return ResponseEntity.ok(new ApiResponse("Recordatorio registrado", HttpStatus.OK,
+                feeServices.marcarRecordatorio(feeId)));
     }
 
     /**

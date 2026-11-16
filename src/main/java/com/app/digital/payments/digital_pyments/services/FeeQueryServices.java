@@ -23,6 +23,7 @@ import com.app.digital.payments.digital_pyments.models.dtos.CuotaListItemDto;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IFeeQueryServices;
 import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
+import com.app.digital.payments.digital_pyments.utils.DireccionUtils;
 import com.app.digital.payments.digital_pyments.utils.FeeStatus;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 
@@ -57,18 +58,35 @@ public class FeeQueryServices implements IFeeQueryServices {
 
     @Override
     @Transactional(readOnly = true)
-    public CobrosHoyResponseDto getCobrosDeHoy(LocalDate fecha) {
+    public CobrosHoyResponseDto getCobrosDeHoy(LocalDate fecha, Long sellerId) {
         LocalDate hoy = fecha != null ? fecha : LocalDate.now();
         CobrosHoyResponseDto response = new CobrosHoyResponseDto();
         response.setFecha(hoy);
 
-        aplicarResumen(response.getHoy(), feeRepository.sumPendingFeesByExpirationDateGrouped(hoy));
-        aplicarResumen(response.getVencidas(), feeRepository.sumOverdueFeesBeforeGrouped(hoy));
+        // El resumen acompaña al filtro: una agenda por vendedor no puede mostrar
+        // totales del negocio entero.
+        if (sellerId == null) {
+            aplicarResumen(response.getHoy(), feeRepository.sumPendingFeesByExpirationDateGrouped(hoy));
+            aplicarResumen(response.getVencidas(), feeRepository.sumOverdueFeesBeforeGrouped(hoy));
+        } else {
+            aplicarResumen(response.getHoy(),
+                    feeRepository.sumPendingFeesByExpirationDateGroupedBySeller(hoy, sellerId));
+            aplicarResumen(response.getVencidas(),
+                    feeRepository.sumOverdueFeesBeforeGroupedBySeller(hoy, sellerId));
+        }
 
-        Specification<Fee> spec = (root, query, cb) -> cb.and(
-                cb.isFalse(root.get("paid")),
-                cb.lessThanOrEqualTo(root.get("expirationDate"), hoy),
-                cb.notEqual(root.get("sale").get("status"), SaleStatus.CANCELED));
+        Specification<Fee> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get("paid")));
+            predicates.add(cb.lessThanOrEqualTo(root.get("expirationDate"), hoy));
+            predicates.add(cb.notEqual(root.get("sale").get("status"), SaleStatus.CANCELED));
+            if (sellerId != null) {
+                // Cartera del cliente, no autoria de la venta: quien atiende al
+                // cliente es quien cobra, aunque la operacion la haya vendido otro.
+                predicates.add(cb.equal(root.get("sale").get("client").get("seller").get("id"), sellerId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
         Page<CuotaListItemDto> page = feeRepository.findAll(spec,
                 PageRequest.of(0, MAX_ITEMS_COBROS_HOY, Sort.by(Sort.Direction.ASC, "expirationDate")))
                 .map(fee -> toDto(fee, hoy));
@@ -137,6 +155,7 @@ public class FeeQueryServices implements IFeeQueryServices {
             dto.setClientId(client.getId());
             dto.setClientName(client.getName());
             dto.setClientPhone(client.getTelefono());
+            dto.setClientAddress(DireccionUtils.formatear(client));
         }
 
         dto.setSaleDescription(sale.getDescriptionProduct());
@@ -160,6 +179,10 @@ public class FeeQueryServices implements IFeeQueryServices {
         dto.setFechaPago(fee.getLastPaymentAt() != null ? fee.getLastPaymentAt().toLocalDate() : null);
         dto.setFechaPagoHora(fee.getLastPaymentAt());
         dto.setPaymentMethod(fee.getPaymentMethod() != null ? fee.getPaymentMethod().name() : null);
+
+        // Gestion de cobro: la agenda muestra a quien ya se le recordo y cuantas veces
+        dto.setUltimoRecordatorio(fee.getLastRemindedAt());
+        dto.setRecordatorios(fee.getReminderCount() != null ? fee.getReminderCount() : 0);
 
         if (Boolean.TRUE.equals(fee.getPaid())) {
             dto.setEstado("PAID");

@@ -19,6 +19,12 @@ public class ClientRequestDto {
     private String email;
     @Size(max = 120, message = "La dirección no puede exceder los 120 caracteres")
     private String direccion;
+    @Size(max = 80, message = "La localidad no puede exceder los 80 caracteres")
+    private String localidad;
+    @Size(max = 40, message = "La provincia no puede exceder los 40 caracteres")
+    private String provincia;
+    @Size(max = 10, message = "El código postal no puede exceder los 10 caracteres")
+    private String codigoPostal;
 
     // validar dni unico
     // PATTERN de 8 numeros
@@ -73,6 +79,30 @@ public class ClientRequestDto {
 
     public void setDireccion(String direccion) {
         this.direccion = direccion;
+    }
+
+    public String getLocalidad() {
+        return localidad;
+    }
+
+    public void setLocalidad(String localidad) {
+        this.localidad = localidad;
+    }
+
+    public String getProvincia() {
+        return provincia;
+    }
+
+    public void setProvincia(String provincia) {
+        this.provincia = provincia;
+    }
+
+    public String getCodigoPostal() {
+        return codigoPostal;
+    }
+
+    public void setCodigoPostal(String codigoPostal) {
+        this.codigoPostal = codigoPostal;
     }
 
     public Long getSellerId() {

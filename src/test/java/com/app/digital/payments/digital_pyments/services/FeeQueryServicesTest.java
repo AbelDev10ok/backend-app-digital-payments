@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -11,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import jakarta.persistence.criteria.CriteriaBuilder;
@@ -58,6 +60,9 @@ class FeeQueryServicesTest {
         client.setId(3L);
         client.setName("Maria Lopez");
         client.setTelefono("0981-555-123");
+        client.setDireccion("Av. Siempre Viva 123");
+        client.setLocalidad("Springfield");
+        client.setProvincia("Buenos Aires");
 
         sale = new Sale();
         sale.setId(2L);
@@ -100,6 +105,21 @@ class FeeQueryServicesTest {
         assertEquals("DELAYED", dto.getEstado());
         assertEquals(5L, dto.getDiasAtraso());
         assertEquals(Boolean.FALSE, dto.getPagada());
+    }
+
+    @Test
+    void getCuotasExponeElUltimoRecordatorioYSuConteo() {
+        Fee conRecordatorio = new Fee(sale, 1, new BigDecimal("150"), LocalDate.now());
+        conRecordatorio.setId(11L);
+        conRecordatorio.setLastRemindedAt(LocalDateTime.of(2026, 8, 25, 14, 30));
+        conRecordatorio.setReminderCount(3);
+        when(feeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(conRecordatorio)));
+
+        CuotaListItemDto dto = consultar(PageRequest.of(0, 20)).getContent().get(0);
+
+        assertEquals(LocalDateTime.of(2026, 8, 25, 14, 30), dto.getUltimoRecordatorio());
+        assertEquals(3, dto.getRecordatorios());
     }
 
     @Test
@@ -189,7 +209,7 @@ class FeeQueryServicesTest {
         when(feeRepository.sumOverdueFeesBeforeGrouped(any(LocalDate.class)))
                 .thenReturn(List.<Object[]>of(new Object[] { "ARS", 1L, new BigDecimal("150") }));
 
-        CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(null);
+        CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(null, null);
 
         assertEquals(LocalDate.now(), response.getFecha());
         assertEquals(2, response.getHoy().getCantidad());
@@ -208,7 +228,7 @@ class FeeQueryServicesTest {
                         new Object[] { "USD", 1L, new BigDecimal("320") }));
         when(feeRepository.sumOverdueFeesBeforeGrouped(any(LocalDate.class))).thenReturn(List.of());
 
-        CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(null);
+        CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(null, null);
 
         assertEquals(2, response.getHoy().getCantidad());
         assertEquals(2, response.getHoy().getMonto().size());
@@ -221,11 +241,62 @@ class FeeQueryServicesTest {
         when(feeRepository.sumPendingFeesByExpirationDateGrouped(any(LocalDate.class))).thenReturn(List.of());
         when(feeRepository.sumOverdueFeesBeforeGrouped(any(LocalDate.class))).thenReturn(List.of());
 
-        CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(LocalDate.now().plusDays(1));
+        CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(LocalDate.now().plusDays(1), null);
 
         assertEquals(0, response.getHoy().getCantidad());
         assertTrue(response.getHoy().getMonto().isEmpty());
         assertEquals(0, response.getVencidas().getCantidad());
         assertEquals(LocalDate.now().plusDays(1), response.getFecha());
+    }
+
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    void getCobrosDeHoyFiltraLaAgendaPorLaCarteraDelVendedor() {
+        ArgumentCaptor<Specification<Fee>> captor = ArgumentCaptor.forClass(Specification.class);
+
+        feeQueryServices.getCobrosDeHoy(null, 5L);
+
+        verify(feeRepository).findAll(captor.capture(), any(Pageable.class));
+
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Root root = mock(Root.class);
+        Path sale = mock(Path.class);
+        Path client = mock(Path.class);
+        Path seller = mock(Path.class);
+        Path sellerIdPath = mock(Path.class);
+        when(root.get("sale")).thenReturn(sale);
+        when(sale.get("client")).thenReturn(client);
+        when(client.get("seller")).thenReturn(seller);
+        when(seller.get("id")).thenReturn(sellerIdPath);
+
+        captor.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
+
+        // El filtro es sobre el vendedor asignado al cliente (su cartera), no
+        // sobre la autoria sellada de la venta.
+        verify(cb).equal(sellerIdPath, 5L);
+    }
+
+    @Test
+    void getCobrosDeHoyConVendedorResumeSoloSuCartera() {
+        when(feeRepository.sumPendingFeesByExpirationDateGroupedBySeller(any(LocalDate.class), eq(5L)))
+                .thenReturn(List.<Object[]>of(new Object[] { "ARS", 1L, new BigDecimal("100") }));
+        when(feeRepository.sumOverdueFeesBeforeGroupedBySeller(any(LocalDate.class), eq(5L)))
+                .thenReturn(List.of());
+
+        CobrosHoyResponseDto response = feeQueryServices.getCobrosDeHoy(null, 5L);
+
+        assertEquals(1, response.getHoy().getCantidad());
+        assertEquals(0, new BigDecimal("100").compareTo(response.getHoy().getMonto().get("ARS")));
+        // La agenda filtrada no mezcla el resto del negocio en el resumen.
+        verify(feeRepository, never()).sumPendingFeesByExpirationDateGrouped(any(LocalDate.class));
+        verify(feeRepository, never()).sumOverdueFeesBeforeGrouped(any(LocalDate.class));
+    }
+
+    @Test
+    void getCuotasMapeaLaDireccionCompletaDelCliente() {
+        Page<CuotaListItemDto> page = consultar(PageRequest.of(0, 20));
+
+        assertEquals("Av. Siempre Viva 123, Springfield, Buenos Aires",
+                page.getContent().get(0).getClientAddress());
     }
 }

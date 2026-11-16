@@ -30,6 +30,9 @@ public class SaleMapper {
             sale.getClient().getSeller() != null ? sale.getClient().getSeller().getName() : null,
             sale.getClient().getDni()        );
         clienteDTO.setSellerId(sale.getClient().getSeller() != null ? sale.getClient().getSeller().getId() : null);
+        clienteDTO.setLocalidad(sale.getClient().getLocalidad());
+        clienteDTO.setProvincia(sale.getClient().getProvincia());
+        clienteDTO.setCodigoPostal(sale.getClient().getCodigoPostal());
 
         SaleResponseDto dto = new SaleResponseDto();
         dto.setId(sale.getId());

@@ -19,6 +19,7 @@ import com.app.digital.payments.digital_pyments.models.Payment;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
 import com.app.digital.payments.digital_pyments.models.dtos.PaymentDto;
+import com.app.digital.payments.digital_pyments.models.dtos.RecordatorioDto;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
@@ -352,6 +353,31 @@ public class FeeServices implements IFeeServices {
         // La cuota (via su venta) tiene que pertenecer al negocio autenticado
         TenantGuard.verificar(fee.getBusiness() != null ? fee.getBusiness().getId() : null);
         return fee;
+    }
+
+    /**
+     * Registra que se le reclamo la cuota al cliente. El envio del mensaje es
+     * manual por WhatsApp: aca solo se sella la gestion para que la agenda sepa
+     * a quien ya se le recordo y no se repita el reclamo.
+     */
+    @Override
+    @Transactional
+    public RecordatorioDto marcarRecordatorio(Long feeId) {
+        Fee fee = getFeeById(feeId);
+        Sale sale = fee.getSale();
+        if (sale != null && sale.getStatus() == SaleStatus.CANCELED) {
+            throw new IllegalArgumentException("La operación está anulada");
+        }
+        if (Boolean.TRUE.equals(fee.getPaid())) {
+            throw new IllegalArgumentException("La cuota ya está cobrada");
+        }
+
+        fee.setLastRemindedAt(LocalDateTime.now());
+        int anteriores = fee.getReminderCount() != null ? fee.getReminderCount() : 0;
+        fee.setReminderCount(anteriores + 1);
+        feeRepository.save(fee);
+        log.info("Recordatorio de pago registrado para la cuota {} ({} en total)", feeId, fee.getReminderCount());
+        return new RecordatorioDto(fee.getId(), fee.getLastRemindedAt(), fee.getReminderCount());
     }
 
     @Override

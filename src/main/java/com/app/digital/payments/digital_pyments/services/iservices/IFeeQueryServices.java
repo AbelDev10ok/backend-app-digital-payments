@@ -29,6 +29,10 @@ public interface IFeeQueryServices {
     /**
      * Agenda de cobros del dia: pendientes que vencen hoy + vencidas,
      * ordenadas por antiguedad de vencimiento.
+     *
+     * @param fecha    fecha de corte (hoy si es null)
+     * @param sellerId filtra por la cartera del cliente (quien lo atiende), no
+     *                 por la autoria de la venta
      */
-    CobrosHoyResponseDto getCobrosDeHoy(LocalDate fecha);
+    CobrosHoyResponseDto getCobrosDeHoy(LocalDate fecha, Long sellerId);
 }
