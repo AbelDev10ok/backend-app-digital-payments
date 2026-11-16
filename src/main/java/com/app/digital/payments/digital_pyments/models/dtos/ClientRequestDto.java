@@ -11,7 +11,9 @@ public class ClientRequestDto {
     @Size(min = 2, max = 15, message = "El nombre debe tener entre 2 y 15 caracteres")
     private String name;
     @NotBlank(message = "El teléfono es obligatorio")
-    @Pattern(regexp = "^[0-9]{10,15}$", message = "El teléfono debe contener solo números y tener entre 10 y 15 dígitos")
+    // El frontend normaliza a E.164 argentino (+549 + área + número); los
+    // legados sin normalizar quedan sólo con dígitos. El "+" es opcional.
+    @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "El teléfono debe tener entre 10 y 15 dígitos, con un + opcional al inicio")
     private String telefono;
     @Email(message = "El email debe tener un formato válido")
     private String email;
