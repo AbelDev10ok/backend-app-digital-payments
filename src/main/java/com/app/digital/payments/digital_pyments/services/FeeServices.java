@@ -14,12 +14,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
 import com.app.digital.payments.digital_pyments.models.Payment;
 import com.app.digital.payments.digital_pyments.models.Sale;
+import com.app.digital.payments.digital_pyments.models.dtos.ClientPaymentResultDto;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
 import com.app.digital.payments.digital_pyments.models.dtos.PaymentDto;
 import com.app.digital.payments.digital_pyments.models.dtos.RecordatorioDto;
+import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
@@ -29,6 +32,7 @@ import com.app.digital.payments.digital_pyments.utils.FeeScheduleCalculator;
 import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
 import com.app.digital.payments.digital_pyments.utils.Payments;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
+import com.app.digital.payments.digital_pyments.utils.TenantContext;
 import com.app.digital.payments.digital_pyments.utils.TenantGuard;
 
 import jakarta.persistence.EntityNotFoundException;
@@ -46,10 +50,14 @@ public class FeeServices implements IFeeServices {
 
     private final IPaymentRepository paymentRepository;
 
-    FeeServices(IFeeRepository feeRepository, ISaleRepository saleRepository, IPaymentRepository paymentRepository) {
+    private final IClientRepository clientRepository;
+
+    FeeServices(IFeeRepository feeRepository, ISaleRepository saleRepository, IPaymentRepository paymentRepository,
+            IClientRepository clientRepository) {
         this.feeRepository = feeRepository;
         this.saleRepository = saleRepository;
         this.paymentRepository = paymentRepository;
+        this.clientRepository = clientRepository;
     }
 
     // Registro de un cobro: la plata entra por la cuota impaga más antigua y el
@@ -116,6 +124,151 @@ public class FeeServices implements IFeeServices {
 
         log.debug("Cobro registrado: cuota={} monto={} fecha={}", feeId, amount, fechaCobro);
         return convertToFeeDto(cuotasCobradas.get(0));
+    }
+
+    // Cobro por cliente: un monto, una transacción, distribuido entre las
+    // operaciones del cliente con deuda en la misma moneda. La deuda más vieja
+    // entra primero (FIFO por vencimiento de la cuota impaga, desempate por id de
+    // operación) y dentro de cada operación la cascada es la del cobro por cuota.
+    // Nada se persiste hasta que todas las operaciones puedan cubrir su parte.
+    @Override
+    @Transactional
+    public ClientPaymentResultDto registerClientPayment(Long clientId, BigDecimal amount, LocalDate date,
+            String paymentMethod, String currency) {
+        if (currency == null || currency.isBlank()) {
+            throw new IllegalArgumentException("La moneda es obligatoria para registrar el cobro");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("El monto del pago debe ser mayor a cero");
+        }
+
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new EntityNotFoundException("Cliente no encontrado con ID: " + clientId));
+        // El cliente tiene que pertenecer al negocio autenticado
+        TenantGuard.verificar(client.getBusiness() != null ? client.getBusiness().getId() : null);
+
+        PaymentMethod pm = parsearMetodoPago(paymentMethod);
+        String moneda = currency.trim().toUpperCase();
+
+        // Operaciones del cliente con deuda en la moneda pedida. Las anuladas son
+        // terminales y quedan fuera aunque la consulta ya las excluya.
+        List<Sale> operaciones = saleRepository.findByClientIdAndStatusNot(clientId, SaleStatus.CANCELED).stream()
+                .filter(sale -> sale.getStatus() != SaleStatus.CANCELED)
+                .filter(sale -> moneda.equalsIgnoreCase(sale.getCurrency()))
+                .toList();
+
+        // El saldo se recalcula antes de validar: el tope es la deuda real
+        operaciones.forEach(Sale::recalcularSaldo);
+
+        List<Sale> conDeuda = operaciones.stream()
+                .filter(sale -> sale.getRemainingAmount().signum() > 0)
+                .sorted(Comparator
+                        .comparing(this::cuotaImpagaMasAntigua,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(Sale::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        BigDecimal deudaTotal = conDeuda.stream()
+                .map(Sale::getRemainingAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (deudaTotal.signum() <= 0) {
+            throw new IllegalArgumentException("El cliente no tiene deuda pendiente en " + moneda);
+        }
+        if (amount.compareTo(deudaTotal) > 0) {
+            throw new IllegalArgumentException("El monto del pago no puede superar la deuda del cliente en " + moneda);
+        }
+
+        LocalDate fechaCobro = date != null ? date : LocalDate.now();
+        for (Sale sale : conDeuda) {
+            if (sale.getDateCreation() != null && fechaCobro.isBefore(sale.getDateCreation())) {
+                throw new IllegalArgumentException(
+                        "La fecha de pago no puede ser anterior a la fecha de creación de la venta");
+            }
+        }
+        // Si se backdatea la fecha, la hora guardada es la real del registro
+        LocalDateTime cuando = fechaCobro.atTime(LocalTime.now());
+
+        BigDecimal restante = amount;
+        BigDecimal aplicadoTotal = BigDecimal.ZERO;
+        List<ClientPaymentResultDto.Application> aplicaciones = new ArrayList<>();
+        List<Sale> tocadas = new ArrayList<>();
+        List<Fee> cuotasCobradas = new ArrayList<>();
+
+        // Aplicación en memoria: si una operación no puede cubrir su parte, la
+        // excepción corta acá y no se persiste ningún cobro.
+        for (Sale sale : conDeuda) {
+            if (restante.signum() <= 0) {
+                break;
+            }
+            BigDecimal aplicar = sale.getRemainingAmount().min(restante);
+            if (aplicar.signum() <= 0) {
+                continue;
+            }
+
+            List<Fee> cobradas = FeePaymentAllocator.aplicar(sale, aplicar, cuando, pm);
+            sale.recalcularSaldo();
+
+            boolean completada = sale.getRemainingAmount().signum() <= 0;
+            if (completada) {
+                sale.setStatus(SaleStatus.COMPLETED);
+                sale.setRealFinalDate(fechaCobro);
+            } else {
+                sale.setStatus(SaleStatus.ACTIVE);
+            }
+
+            ClientPaymentResultDto.Application aplicacion = new ClientPaymentResultDto.Application();
+            aplicacion.setSaleId(sale.getId());
+            aplicacion.setSaleDescription(sale.getDescriptionProduct());
+            aplicacion.setSaleKind(sale.getKind() != null ? sale.getKind().name() : null);
+            aplicacion.setAppliedAmount(aplicar);
+            aplicacion.setSaleRemainingAmount(sale.getRemainingAmount());
+            aplicacion.setFeesPaid(cobradas.size());
+            aplicacion.setSaleCompleted(completada);
+            aplicaciones.add(aplicacion);
+
+            cuotasCobradas.addAll(cobradas);
+            tocadas.add(sale);
+            aplicadoTotal = aplicadoTotal.add(aplicar);
+            restante = restante.subtract(aplicar);
+        }
+
+        // Recién con todo aplicado se persiste y se limpian las cuotas impagas
+        // sobrantes de las operaciones que quedaron sin deuda.
+        cuotasCobradas.forEach(feeRepository::save);
+        tocadas.forEach(sale -> {
+            if (sale.getStatus() == SaleStatus.COMPLETED) {
+                eliminarCuotasImpagasSobrantes(sale, null);
+            }
+            saleRepository.save(sale);
+        });
+
+        BigDecimal deudaRestante = conDeuda.stream()
+                .map(Sale::getRemainingAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        ClientPaymentResultDto resultado = new ClientPaymentResultDto();
+        resultado.setClientId(client.getId());
+        resultado.setClientName(client.getName());
+        resultado.setCurrency(moneda);
+        resultado.setAppliedAmount(aplicadoTotal);
+        resultado.setRemainingDebt(deudaRestante);
+        resultado.setApplications(aplicaciones);
+
+        log.debug("Cobro por cliente registrado: cliente={} monto={} moneda={} operaciones={}",
+                clientId, aplicadoTotal, moneda, aplicaciones.size());
+        return resultado;
+    }
+
+    // Vencimiento de la cuota impaga más antigua de la operación: es la que ordena
+    // la distribución entre operaciones (null si no queda nada por cobrar).
+    private LocalDate cuotaImpagaMasAntigua(Sale sale) {
+        return sale.getFees().stream()
+                .filter(cuota -> !Boolean.TRUE.equals(cuota.getPaid()) && cuota.getPendingAmount().signum() > 0)
+                .map(Fee::getExpirationDate)
+                .filter(Objects::nonNull)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
     }
 
     // Edición de una cuota: fecha de vencimiento, fecha de pago y monto.

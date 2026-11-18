@@ -59,6 +59,7 @@ class VerifE234FeeServicesTest {
     @Mock private IFeeRepository feeRepository;
     @Mock private ISaleRepository saleRepository;
     @Mock private IPaymentRepository paymentRepository;
+    @Mock private IClientRepository clientRepository;
 
     private FeeServices feeServices;
     private Sale sale;
@@ -71,7 +72,7 @@ class VerifE234FeeServicesTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository);
+        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository);
         sale = new Sale();
         sale.setId(1L);
         sale.setDateCreation(LocalDate.of(2026, 8, 1));

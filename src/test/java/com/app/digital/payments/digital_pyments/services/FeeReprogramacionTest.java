@@ -27,6 +27,7 @@ import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
+import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
@@ -52,6 +53,9 @@ class FeeReprogramacionTest {
     @Mock
     private IPaymentRepository paymentRepository;
 
+    @Mock
+    private IClientRepository clientRepository;
+
     private FeeServices feeServices;
 
     private Sale sale;
@@ -64,7 +68,7 @@ class FeeReprogramacionTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository);
+        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository);
 
         sale = new Sale();
         sale.setId(1L);

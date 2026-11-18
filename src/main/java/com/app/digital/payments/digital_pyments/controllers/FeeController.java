@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.app.digital.payments.digital_pyments.models.dtos.ClientPaymentResultDto;
 import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.CuotaListItemDto;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
@@ -77,6 +78,22 @@ public class FeeController {
     public ResponseEntity<List<FeeDto>> getFeesBySale(
             @PathVariable Long saleId) {
         return ResponseEntity.ok(feeServices.getFeeBySaleId(saleId));
+    }
+
+    /**
+     * Cobro por cliente: un monto distribuido entre todas las operaciones del
+     * cliente con deuda en la misma moneda, de la deuda mas vieja a la mas nueva.
+     */
+    @PostMapping("/clients/{clientId}/pay")
+    public ResponseEntity<ApiResponse> registerClientPayment(
+            @PathVariable Long clientId,
+            @RequestParam BigDecimal amount,
+            @RequestParam(name = "date") LocalDate date,
+            @RequestParam(name = "currency") String currency,
+            @RequestParam(name = "paymentMethod", required = false, defaultValue = "EFECTIVO") String paymentMethod) {
+        ClientPaymentResultDto resultado = feeServices.registerClientPayment(
+                clientId, amount, date, paymentMethod, currency);
+        return ResponseEntity.ok(new ApiResponse("Cobro registrado correctamente", HttpStatus.OK, resultado));
     }
 
     /**

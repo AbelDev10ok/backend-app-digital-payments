@@ -77,6 +77,13 @@ public interface ISaleRepository extends JpaRepository<Sale, Long>, JpaSpecifica
     Page<Sale> findNotCompletedByClientIdOrderByDateCreationDesc(@Param("clientId") Long clientId,
             @Param("completed") SaleStatus completed, @Param("canceled") SaleStatus canceled, Pageable pageable);
 
+    // Operaciones del cliente con su plan de cuotas, para el cobro por cliente:
+    // el servicio filtra por moneda y deuda y ordena por la cuota impaga mas
+    // antigua. Las ventas anuladas quedan fuera (son terminales).
+    @Query("SELECT DISTINCT s FROM Sale s WHERE s.client.id = :clientId AND s.status <> :canceled")
+    @EntityGraph(attributePaths = {"fees"})
+    List<Sale> findByClientIdAndStatusNot(@Param("clientId") Long clientId, @Param("canceled") SaleStatus canceled);
+
     // Obtengo todas las ventas pagadas por cliente y que NO están canceladas (paginado)
     @Query(value = "SELECT s FROM Sale s WHERE s.client.id = :clientId AND s.status = :completed ORDER BY s.dateCreation DESC",
            countQuery = "SELECT COUNT(s) FROM Sale s WHERE s.client.id = :clientId AND s.status = :completed")
