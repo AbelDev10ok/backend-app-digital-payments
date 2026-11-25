@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
 import com.app.digital.payments.digital_pyments.models.Payment;
+import com.app.digital.payments.digital_pyments.models.PaymentPromise;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientPaymentResultDto;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
@@ -24,6 +25,7 @@ import com.app.digital.payments.digital_pyments.models.dtos.PaymentDto;
 import com.app.digital.payments.digital_pyments.models.dtos.RecordatorioDto;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IFeeServices;
@@ -31,6 +33,7 @@ import com.app.digital.payments.digital_pyments.utils.FeePaymentAllocator;
 import com.app.digital.payments.digital_pyments.utils.FeeScheduleCalculator;
 import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
 import com.app.digital.payments.digital_pyments.utils.Payments;
+import com.app.digital.payments.digital_pyments.utils.PromiseStatus;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 import com.app.digital.payments.digital_pyments.utils.TenantContext;
 import com.app.digital.payments.digital_pyments.utils.TenantGuard;
@@ -52,12 +55,15 @@ public class FeeServices implements IFeeServices {
 
     private final IClientRepository clientRepository;
 
+    private final IPaymentPromiseRepository promiseRepository;
+
     FeeServices(IFeeRepository feeRepository, ISaleRepository saleRepository, IPaymentRepository paymentRepository,
-            IClientRepository clientRepository) {
+            IClientRepository clientRepository, IPaymentPromiseRepository promiseRepository) {
         this.feeRepository = feeRepository;
         this.saleRepository = saleRepository;
         this.paymentRepository = paymentRepository;
         this.clientRepository = clientRepository;
+        this.promiseRepository = promiseRepository;
     }
 
     // Registro de un cobro: la plata entra por la cuota impaga más antigua y el
@@ -121,6 +127,9 @@ public class FeeServices implements IFeeServices {
 
         cuotasCobradas.forEach(feeRepository::save);
         saleRepository.save(sale);
+
+        // El cobro puede haber cumplido una promesa de pago del cliente
+        cumplirPromesasDePago(sale.getClient(), sale.getCurrency(), amount, fechaCobro.atTime(LocalTime.now()));
 
         log.debug("Cobro registrado: cuota={} monto={} fecha={}", feeId, amount, fechaCobro);
         return convertToFeeDto(cuotasCobradas.get(0));
@@ -243,6 +252,9 @@ public class FeeServices implements IFeeServices {
             saleRepository.save(sale);
         });
 
+        // El cobro puede haber cumplido promesas de pago del cliente en esa moneda
+        cumplirPromesasDePago(client, moneda, aplicadoTotal, cuando);
+
         BigDecimal deudaRestante = conDeuda.stream()
                 .map(Sale::getRemainingAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -269,6 +281,35 @@ public class FeeServices implements IFeeServices {
                 .filter(Objects::nonNull)
                 .min(Comparator.naturalOrder())
                 .orElse(null);
+    }
+
+    /**
+     * Cierra las promesas de pago que el cobro acaba de cumplir. Se recorren de la
+     * fecha prometida más vieja a la más nueva y se da por cumplida cada una cuyo
+     * monto entra completo en lo cobrado. Una promesa que no se cubre entera sigue
+     * pendiente: un cobro parcial no la cierra (el cliente prometió un monto).
+     */
+    private void cumplirPromesasDePago(Client client, String currency, BigDecimal cobrado, LocalDateTime cuando) {
+        if (client == null || client.getId() == null || currency == null || cobrado == null) {
+            return;
+        }
+        List<PaymentPromise> pendientes = promiseRepository
+                .findByClientIdAndCurrencyAndStatusOrderByPromisedDateAsc(
+                        client.getId(), currency, PromiseStatus.PENDING);
+        if (pendientes == null || pendientes.isEmpty()) {
+            return;
+        }
+        BigDecimal restante = cobrado;
+        for (PaymentPromise promesa : pendientes) {
+            BigDecimal monto = promesa.getAmount();
+            if (monto == null || restante.compareTo(monto) < 0) {
+                // La promesa más vieja no entra completa: no se sigue con las nuevas
+                break;
+            }
+            promesa.setStatus(PromiseStatus.FULFILLED);
+            promesa.setResolvedAt(cuando);
+            restante = restante.subtract(monto);
+        }
     }
 
     // Edición de una cuota: fecha de vencimiento, fecha de pago y monto.

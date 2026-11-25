@@ -24,6 +24,7 @@ import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.Payments;
@@ -38,6 +39,7 @@ class FeePaymentFifoTest {
     @Mock private ISaleRepository saleRepository;
     @Mock private IPaymentRepository paymentRepository;
     @Mock private IClientRepository clientRepository;
+    @Mock private IPaymentPromiseRepository promiseRepository;
 
     private FeeServices feeServices;
     private Sale sale;
@@ -45,7 +47,7 @@ class FeePaymentFifoTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository);
+        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository, promiseRepository);
         sale = new Sale();
         sale.setId(1L);
         sale.setDateCreation(LocalDate.of(2026, 8, 1));

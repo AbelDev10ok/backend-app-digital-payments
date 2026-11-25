@@ -16,16 +16,21 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
+import com.app.digital.payments.digital_pyments.models.PaymentPromise;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto.Resumen;
 import com.app.digital.payments.digital_pyments.models.dtos.CuotaListItemDto;
+import com.app.digital.payments.digital_pyments.models.dtos.PaymentPromiseDto;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IFeeQueryServices;
 import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
 import com.app.digital.payments.digital_pyments.utils.DireccionUtils;
 import com.app.digital.payments.digital_pyments.utils.FeeStatus;
+import com.app.digital.payments.digital_pyments.utils.PromiseStatus;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
+import com.app.digital.payments.digital_pyments.mappers.PaymentPromiseMapper;
 
 import jakarta.persistence.criteria.Predicate;
 
@@ -35,9 +40,11 @@ public class FeeQueryServices implements IFeeQueryServices {
     private static final int MAX_ITEMS_COBROS_HOY = 200;
 
     private final IFeeRepository feeRepository;
+    private final IPaymentPromiseRepository promiseRepository;
 
-    public FeeQueryServices(IFeeRepository feeRepository) {
+    public FeeQueryServices(IFeeRepository feeRepository, IPaymentPromiseRepository promiseRepository) {
         this.feeRepository = feeRepository;
+        this.promiseRepository = promiseRepository;
     }
 
     @Override
@@ -91,7 +98,31 @@ public class FeeQueryServices implements IFeeQueryServices {
                 PageRequest.of(0, MAX_ITEMS_COBROS_HOY, Sort.by(Sort.Direction.ASC, "expirationDate")))
                 .map(fee -> toDto(fee, hoy));
         response.setItems(page.getContent());
+        // La agenda se lee por cliente + moneda: las promesas pendientes viajan en
+        // la misma respuesta para que la UI marque a quién ya se le prometió algo.
+        response.setPromesas(promesasPendientes(page.getContent(), hoy));
         return response;
+    }
+
+    /**
+     * Promesas pendientes de los clientes que aparecen en la agenda, en una sola
+     * consulta. Una promesa vencida sigue pendiente: se muestra igual, marcada.
+     */
+    private List<PaymentPromiseDto> promesasPendientes(List<CuotaListItemDto> items, LocalDate hoy) {
+        List<Long> clientIds = items.stream()
+                .map(CuotaListItemDto::getClientId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (clientIds.isEmpty()) {
+            return List.of();
+        }
+        List<PaymentPromise> promesas = promiseRepository
+                .findByClientIdInAndStatusOrderByPromisedDateAsc(clientIds, PromiseStatus.PENDING);
+        if (promesas == null || promesas.isEmpty()) {
+            return List.of();
+        }
+        return promesas.stream().map(promesa -> PaymentPromiseMapper.toDto(promesa, hoy)).toList();
     }
 
     private Specification<Fee> buildSpecification(FeeStatus estado, LocalDate desde, LocalDate hasta,

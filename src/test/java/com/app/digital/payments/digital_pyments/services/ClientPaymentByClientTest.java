@@ -2,6 +2,8 @@ package com.app.digital.payments.digital_pyments.services;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -11,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -24,14 +27,17 @@ import org.mockito.MockitoAnnotations;
 import com.app.digital.payments.digital_pyments.models.Business;
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
+import com.app.digital.payments.digital_pyments.models.PaymentPromise;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientPaymentResultDto;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
+import com.app.digital.payments.digital_pyments.utils.PromiseStatus;
 import com.app.digital.payments.digital_pyments.utils.TenantContext;
 
 /**
@@ -55,6 +61,8 @@ class ClientPaymentByClientTest {
     private IPaymentRepository paymentRepository;
     @Mock
     private IClientRepository clientRepository;
+    @Mock
+    private IPaymentPromiseRepository promiseRepository;
 
     private FeeServices feeServices;
     private Business negocio;
@@ -63,7 +71,7 @@ class ClientPaymentByClientTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository);
+        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository, promiseRepository);
 
         negocio = new Business();
         negocio.setId(1L);
@@ -351,5 +359,43 @@ class ClientPaymentByClientTest {
         assertEquals("Recurso no encontrado", error.getMessage());
         verify(feeRepository, never()).save(any(Fee.class));
         verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    // Una promesa de pago se cumple cuando un cobro cubre su monto completo
+    @Test
+    void cumpleLaPromesaDePagoCuandoElCobroCubreSuMonto() {
+        Sale operacion = operacion(1L, "Operacion", ARS, SaleStatus.ACTIVE, "200",
+                cuota(11L, 1, "100", LocalDate.of(2026, 1, 1)),
+                cuota(12L, 2, "100", LocalDate.of(2026, 2, 1)));
+        devolverOperaciones(operacion);
+
+        PaymentPromise promesa = new PaymentPromise(negocio, cliente, ARS, new BigDecimal("150"),
+                LocalDate.of(2026, 2, 10), "prometio el viernes", LocalDateTime.now());
+        when(promiseRepository.findByClientIdAndCurrencyAndStatusOrderByPromisedDateAsc(
+                CLIENTE_ID, ARS, PromiseStatus.PENDING)).thenReturn(List.of(promesa));
+
+        feeServices.registerClientPayment(CLIENTE_ID, new BigDecimal("150"), FECHA_COBRO, "EFECTIVO", ARS);
+
+        assertEquals(PromiseStatus.FULFILLED, promesa.getStatus());
+        assertNotNull(promesa.getResolvedAt());
+    }
+
+    // Un cobro parcial no cierra la promesa: sigue pendiente
+    @Test
+    void unCobroParcialNoCumpleLaPromesa() {
+        Sale operacion = operacion(1L, "Operacion", ARS, SaleStatus.ACTIVE, "200",
+                cuota(11L, 1, "100", LocalDate.of(2026, 1, 1)),
+                cuota(12L, 2, "100", LocalDate.of(2026, 2, 1)));
+        devolverOperaciones(operacion);
+
+        PaymentPromise promesa = new PaymentPromise(negocio, cliente, ARS, new BigDecimal("150"),
+                LocalDate.of(2026, 2, 10), null, LocalDateTime.now());
+        when(promiseRepository.findByClientIdAndCurrencyAndStatusOrderByPromisedDateAsc(
+                CLIENTE_ID, ARS, PromiseStatus.PENDING)).thenReturn(List.of(promesa));
+
+        feeServices.registerClientPayment(CLIENTE_ID, new BigDecimal("50"), FECHA_COBRO, "EFECTIVO", ARS);
+
+        assertEquals(PromiseStatus.PENDING, promesa.getStatus());
+        assertNull(promesa.getResolvedAt());
     }
 }

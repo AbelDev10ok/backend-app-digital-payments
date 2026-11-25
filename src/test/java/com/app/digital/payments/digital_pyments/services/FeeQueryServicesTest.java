@@ -39,6 +39,7 @@ import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.CuotaListItemDto;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.utils.FeeStatus;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
 
@@ -47,6 +48,9 @@ class FeeQueryServicesTest {
     @Mock
     private IFeeRepository feeRepository;
 
+    @Mock
+    private IPaymentPromiseRepository promiseRepository;
+
     private FeeQueryServices feeQueryServices;
 
     private Sale sale;
@@ -54,7 +58,7 @@ class FeeQueryServicesTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        feeQueryServices = new FeeQueryServices(feeRepository);
+        feeQueryServices = new FeeQueryServices(feeRepository, promiseRepository);
 
         Client client = new Client();
         client.setId(3L);

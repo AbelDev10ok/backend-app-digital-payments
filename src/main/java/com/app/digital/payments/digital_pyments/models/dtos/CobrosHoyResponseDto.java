@@ -16,6 +16,8 @@ public class CobrosHoyResponseDto {
     private Resumen hoy = new Resumen();
     private Resumen vencidas = new Resumen();
     private List<CuotaListItemDto> items = new ArrayList<>();
+    // Promesas de pago pendientes de los clientes de la agenda (cliente + moneda)
+    private List<PaymentPromiseDto> promesas = new ArrayList<>();
     private LocalDate fecha;
 
     public static class Resumen {
@@ -62,6 +64,14 @@ public class CobrosHoyResponseDto {
 
     public void setItems(List<CuotaListItemDto> items) {
         this.items = items;
+    }
+
+    public List<PaymentPromiseDto> getPromesas() {
+        return promesas;
+    }
+
+    public void setPromesas(List<PaymentPromiseDto> promesas) {
+        this.promesas = promesas;
     }
 
     public LocalDate getFecha() {

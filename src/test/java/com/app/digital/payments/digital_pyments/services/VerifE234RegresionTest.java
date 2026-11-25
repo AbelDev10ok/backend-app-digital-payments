@@ -12,6 +12,7 @@ import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
@@ -60,6 +61,7 @@ class VerifE234FeeServicesTest {
     @Mock private ISaleRepository saleRepository;
     @Mock private IPaymentRepository paymentRepository;
     @Mock private IClientRepository clientRepository;
+    @Mock private IPaymentPromiseRepository promiseRepository;
 
     private FeeServices feeServices;
     private Sale sale;
@@ -72,7 +74,7 @@ class VerifE234FeeServicesTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository);
+        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository, promiseRepository);
         sale = new Sale();
         sale.setId(1L);
         sale.setDateCreation(LocalDate.of(2026, 8, 1));
@@ -414,13 +416,14 @@ class VerifE234FeeServicesTest {
 
 class VerifE234QueryTest {
     @Mock private IFeeRepository feeRepository;
+    @Mock private IPaymentPromiseRepository promiseRepository;
 
     private FeeQueryServices service;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        service = new FeeQueryServices(feeRepository);
+        service = new FeeQueryServices(feeRepository, promiseRepository);
 
         Sale sale = new Sale();
         sale.setId(2L);
