@@ -37,10 +37,12 @@ public class AuthController {
         try {
             Usuario usuarioVerificado = userServices.verifyUser(token);
             if (usuarioVerificado.isEnabled()) {
-                return ResponseEntity.ok(new ApiResponse("¡Correo verificado con éxito! Ya puedes iniciar sesión.", HttpStatus.OK, null));
+                return ResponseEntity.ok(new ApiResponse("¡Correo verificado con éxito! Ya puedes iniciar sesión.",
+                        HttpStatus.OK, null));
             }
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(new ApiResponse("El usuario está deshabilitado. Contacta al administrador.", HttpStatus.FORBIDDEN, null));
+                    .body(new ApiResponse("El usuario está deshabilitado. Contacta al administrador.",
+                            HttpStatus.FORBIDDEN, null));
         } catch (RuntimeException e) {
             log.warn("Token de verificacion invalido o expirado");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -53,16 +55,20 @@ public class AuthController {
         if (result.hasFieldErrors()) {
             log.warn("Errores de validacion al registrar usuario: {}", result.getAllErrors());
             return ResponseEntity.badRequest()
-                    .body(new ApiResponse("Datos invalidos. Revisa el email y que la contrasena tenga al menos 8 caracteres.", HttpStatus.BAD_REQUEST, null));
+                    .body(new ApiResponse(
+                            "Datos invalidos. Revisa el email y que la contrasena tenga al menos 8 caracteres.",
+                            HttpStatus.BAD_REQUEST, null));
         }
         try {
             userServices.saveUser(entity);
             log.info("Usuario registrado: {}", entity.getEmail());
-            return ResponseEntity.ok(new ApiResponse("Registro exitoso. Revisa tu correo para verificar tu cuenta.", HttpStatus.OK, null));
+            return ResponseEntity.ok(new ApiResponse("Registro exitoso. Revisa tu correo para verificar tu cuenta.",
+                    HttpStatus.OK, null));
         } catch (Exception e) {
             log.warn("Error al registrar usuario", e);
             return ResponseEntity.badRequest()
-                    .body(new ApiResponse("No se pudo completar el registro. Intente nuevamente.", HttpStatus.BAD_REQUEST, null));
+                    .body(new ApiResponse("No se pudo completar el registro. Intente nuevamente.",
+                            HttpStatus.BAD_REQUEST, null));
         }
     }
 
@@ -75,7 +81,8 @@ public class AuthController {
             log.warn("Solicitud de restablecimiento para email no registrado o error de email");
         }
         // Respuesta generica siempre: no revela si el email existe (evita enumeracion).
-        return ResponseEntity.ok().body("Si el email está registrado, recibirás un enlace para restablecer tu contraseña.");
+        return ResponseEntity.ok()
+                .body("Si el email está registrado, recibirás un enlace para restablecer tu contraseña.");
     }
 
     @PostMapping("/reset-password")

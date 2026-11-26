@@ -104,6 +104,15 @@ public class FeeQueryServices implements IFeeQueryServices {
         return response;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<CuotaListItemDto> cuotasPendientesDelNegocio(Long businessId, LocalDate fecha) {
+        LocalDate hoy = fecha != null ? fecha : LocalDate.now();
+        return feeRepository.findPendingForRound(businessId, hoy).stream()
+                .map(fee -> toDto(fee, hoy))
+                .toList();
+    }
+
     /**
      * Promesas pendientes de los clientes que aparecen en la agenda, en una sola
      * consulta. Una promesa vencida sigue pendiente: se muestra igual, marcada.

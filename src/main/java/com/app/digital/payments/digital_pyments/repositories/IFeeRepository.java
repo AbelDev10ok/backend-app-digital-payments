@@ -79,4 +79,13 @@ public interface IFeeRepository extends JpaRepository<Fee, Long>, JpaSpecificati
     List<Fee> findByPaidFalseAndExpirationDateGreaterThan(LocalDate nnumber);
     List<Fee> findByPaidFalse();
 
+    // Ronda diaria: todas las cuotas pendientes del negocio hasta la fecha. La
+    // consulta filtra por negocio explicito porque el job diario corre fuera de
+    // un request y no tiene el tenantFilter de Hibernate habilitado.
+    @Query("SELECT f FROM Fee f JOIN FETCH f.sale s LEFT JOIN FETCH s.client " +
+            "WHERE f.business.id = :businessId AND f.paid = false " +
+            "AND f.expirationDate <= :date AND s.status != 'CANCELED' " +
+            "ORDER BY f.expirationDate ASC")
+    List<Fee> findPendingForRound(@Param("businessId") Long businessId, @Param("date") LocalDate date);
+
 }
