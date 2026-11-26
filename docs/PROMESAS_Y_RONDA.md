@@ -235,5 +235,5 @@ La promesa alimenta el orden de la ronda. El job no lee promesas para decidir *q
 
 - **El envío de recordatorios es manual.** El backend no manda mensajes: el cobrador envía por `wa.me` desde la agenda. La promesa registra la gestión, no dispara la comunicación.
 - **No hay notificación de promesa vencida.** Se ve en la agenda y en la ronda, pero no hay alerta push ni mail. Es el siguiente paso natural: un resumen diario con las promesas vencidas.
-- **El job no reintenta.** Si un negocio falla a las 6:00, no se reintenta hasta el día siguiente. La consulta `GET /round/today` sí construye la ronda si no existe, así que el cobrador no queda bloqueado.
+- **El job reintenta con backoff lineal.** Cada negocio se intenta hasta 3 veces (2 s, 4 s) antes de darse por vencido; un fallo transitorio se resuelve sin intervención. Si el proceso se cae a mitad de la ronda, el reintento no aplica: la consulta `GET /round/today` arma la ronda faltante cuando el cobrador la abre. Configurable con `app.round.retry.attempts` y `app.round.retry.backoff-ms`.
 - **Una sola ronda por negocio y día.** No hay rondas por vendedor. Si el negocio tiene varios vendedores, todos ven la misma ronda y el filtro por cartera se aplica en la agenda, no en la ronda.

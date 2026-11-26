@@ -20,10 +20,12 @@ import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository
 import com.app.digital.payments.digital_pyments.services.iservices.IRoundServices;
 
 /**
- * Job diario de la ronda: arma la ronda de cada negocio y un negocio que falla
- * no corta al resto.
+ * Job diario de la ronda: arma la ronda de cada negocio, reintenta los fallos
+ * transitorios y un negocio que falla no corta al resto.
  */
 class RoundSchedulerTest {
+
+    private static final int INTENTOS = 3;
 
     @Mock
     private IRoundServices roundServices;
@@ -35,7 +37,8 @@ class RoundSchedulerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        scheduler = new RoundScheduler(roundServices, businessRepository);
+        // Sin espera: el backoff real no aporta nada en un test y lo hace lento
+        scheduler = new RoundScheduler(roundServices, businessRepository, INTENTOS, 0);
     }
 
     @Test
@@ -49,6 +52,29 @@ class RoundSchedulerTest {
     }
 
     @Test
+    void reintentaUnFalloTransitorioYTerminaBien() {
+        when(businessRepository.findAll()).thenReturn(List.of(negocio(1L)));
+        when(roundServices.construirRonda(eq(1L), any(LocalDate.class)))
+                .thenThrow(new RuntimeException("timeout de base"))
+                .thenReturn(null);
+
+        scheduler.armarRondasDelDia();
+
+        verify(roundServices, times(2)).construirRonda(eq(1L), any(LocalDate.class));
+    }
+
+    @Test
+    void seRindeTrasAgotarLosIntentos() {
+        when(businessRepository.findAll()).thenReturn(List.of(negocio(1L)));
+        when(roundServices.construirRonda(eq(1L), any(LocalDate.class)))
+                .thenThrow(new RuntimeException("base caida"));
+
+        scheduler.armarRondasDelDia();
+
+        verify(roundServices, times(INTENTOS)).construirRonda(eq(1L), any(LocalDate.class));
+    }
+
+    @Test
     void unNegocioQueFallaNoCortaAlResto() {
         when(businessRepository.findAll()).thenReturn(List.of(negocio(1L), negocio(2L), negocio(3L)));
         when(roundServices.construirRonda(eq(2L), any(LocalDate.class)))
@@ -57,7 +83,7 @@ class RoundSchedulerTest {
         scheduler.armarRondasDelDia();
 
         verify(roundServices, times(1)).construirRonda(eq(1L), any(LocalDate.class));
-        verify(roundServices, times(1)).construirRonda(eq(2L), any(LocalDate.class));
+        verify(roundServices, times(INTENTOS)).construirRonda(eq(2L), any(LocalDate.class));
         verify(roundServices, times(1)).construirRonda(eq(3L), any(LocalDate.class));
     }
 
