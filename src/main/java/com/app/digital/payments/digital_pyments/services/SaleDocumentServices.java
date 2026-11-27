@@ -22,6 +22,7 @@ import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository
 import com.app.digital.payments.digital_pyments.repositories.ISaleDocumentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
+import com.app.digital.payments.digital_pyments.utils.DireccionUtils;
 import com.app.digital.payments.digital_pyments.utils.DocumentType;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
@@ -111,7 +112,7 @@ public class SaleDocumentServices {
 
         document.setClientName(client.getName());
         document.setClientDoc(limpiar(client.getDni()));
-        document.setClientAddress(limpiar(client.getDireccion()));
+        document.setClientAddress(limpiar(DireccionUtils.formatear(client)));
         document.setClientPhone(limpiar(client.getTelefono()));
 
         if (variant != null) {

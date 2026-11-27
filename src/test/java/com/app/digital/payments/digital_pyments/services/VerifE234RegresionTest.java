@@ -12,9 +12,11 @@ import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
+import com.app.digital.payments.digital_pyments.repositories.IStockMovementRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleDocumentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.FeeStatus;
@@ -58,6 +60,8 @@ class VerifE234FeeServicesTest {
     @Mock private IFeeRepository feeRepository;
     @Mock private ISaleRepository saleRepository;
     @Mock private IPaymentRepository paymentRepository;
+    @Mock private IClientRepository clientRepository;
+    @Mock private IPaymentPromiseRepository promiseRepository;
 
     private FeeServices feeServices;
     private Sale sale;
@@ -70,7 +74,7 @@ class VerifE234FeeServicesTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository);
+        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository, promiseRepository);
         sale = new Sale();
         sale.setId(1L);
         sale.setDateCreation(LocalDate.of(2026, 8, 1));
@@ -412,13 +416,14 @@ class VerifE234FeeServicesTest {
 
 class VerifE234QueryTest {
     @Mock private IFeeRepository feeRepository;
+    @Mock private IPaymentPromiseRepository promiseRepository;
 
     private FeeQueryServices service;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        service = new FeeQueryServices(feeRepository);
+        service = new FeeQueryServices(feeRepository, promiseRepository);
 
         Sale sale = new Sale();
         sale.setId(2L);
@@ -541,7 +546,8 @@ class VerifE234AltaTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         ventaServices = new VentaServices(salesRepository, clientRepository, feeRepository, productTypeRepository,
-                variantRepository, businessRepository, saleDocumentRepository);
+                variantRepository, businessRepository, saleDocumentRepository,
+                new StockServices(variantRepository, org.mockito.Mockito.mock(IStockMovementRepository.class)));
         TenantContext.setBusinessId(1L);
         when(salesRepository.save(any(Sale.class))).thenAnswer(inv -> {
             Sale s = inv.getArgument(0);

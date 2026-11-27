@@ -42,6 +42,7 @@ import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
+import com.app.digital.payments.digital_pyments.repositories.IStockMovementRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleDocumentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.DocumentType;
@@ -79,7 +80,8 @@ class VentaServicesTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         ventaServices = new VentaServices(salesRepository, clientRepository, feeRepository, productTypeRepository,
-                variantRepository, businessRepository, saleDocumentRepository);
+                variantRepository, businessRepository, saleDocumentRepository,
+                new StockServices(variantRepository, org.mockito.Mockito.mock(IStockMovementRepository.class)));
         TenantContext.setBusinessId(1L);
     }
 
@@ -1784,42 +1786,16 @@ class VentaServicesTest {
         assertEquals("Una operación no puede atribuirse a la misma persona que la compra.", ex.getMessage());
     }
 
+    // La autoría comercial se sella al crear la operación y la edición no la
+    // reescribe: no hay campo de vendedor en el request de actualización.
     @Test
-    void updateSaleCorrigeElVendedorSellado() throws Exception {
+    void updateSaleNoTocaElVendedorSellado() throws Exception {
         Client cliente = new Client();
         cliente.setId(1L);
-
-        Sale sale = new Sale();
-        sale.setId(10L);
-        sale.setClient(cliente);
-        sale.setStatus(SaleStatus.ACTIVE);
-        sale.setKind(SaleKind.PRESTAMO);
-        when(salesRepository.findById(10L)).thenReturn(Optional.of(sale));
 
         Client vendedor = new Client();
         vendedor.setId(2L);
         vendedor.setName("luis");
-        vendedor.setSeller(true);
-        when(clientRepository.findById(2L)).thenReturn(Optional.of(vendedor));
-
-        SaleUpdateRequestDto dto = new SaleUpdateRequestDto();
-        dto.setKind("PRESTAMO");
-        dto.setDescriptionProduct("Préstamo personal");
-        dto.setSellerId(2L);
-
-        ventaServices.updateSale(dto, 10L);
-
-        assertEquals(2L, sale.getSeller().getId());
-        verify(salesRepository).save(sale);
-    }
-
-    @Test
-    void updateSaleSinVendedorDejaLaOperacionSinAtribuir() throws Exception {
-        Client cliente = new Client();
-        cliente.setId(1L);
-
-        Client vendedor = new Client();
-        vendedor.setId(2L);
         vendedor.setSeller(true);
 
         Sale sale = new Sale();
@@ -1836,6 +1812,8 @@ class VentaServicesTest {
 
         ventaServices.updateSale(dto, 10L);
 
-        assertNull(sale.getSeller());
+        assertNotNull(sale.getSeller());
+        assertEquals(2L, sale.getSeller().getId());
+        verify(salesRepository).save(sale);
     }
 }

@@ -480,6 +480,9 @@ class SubscriptionServiceTest {
     void accesoSeConservaHastaFinDelPeriodoTrasCancelar() {
         Subscription sub = suscripcionActiva();
         sub.setStatus("CANCELLED");
+        // El periodo pagado tiene que seguir vigente: PROXIMO_COBRO es una fecha
+        // fija de los eventos y con el correr del calendario queda en el pasado.
+        sub.getBusiness().setSubscriptionUntil(LocalDate.now().plusDays(10));
         when(subscriptionRepository.findByBusinessId(7L)).thenReturn(Optional.of(sub));
         when(businessRepository.findById(7L)).thenReturn(Optional.of(sub.getBusiness()));
 

@@ -54,7 +54,7 @@ class UsuarioChangePasswordTest {
         MockitoAnnotations.openMocks(this);
         // Los mocks no usados (rol, negocio, categorias) quedan en null-safe por defecto
         usuarioServices = new UsuarioServices(usuarioRepository, roleRepository, passwordEncoder,
-                null, businessRepository, productTypeRepository, jwtUtil);
+                null, businessRepository, productTypeRepository, jwtUtil, "");
 
         usuario = new Usuario();
         usuario.setId(1L);

@@ -1,6 +1,7 @@
 package com.app.digital.payments.digital_pyments.services;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -78,6 +79,10 @@ class VentaQueryServicesTest {
         when(saleRepository.findTopClientsByYearGrouped(anyInt())).thenReturn(List.<Object[]>of());
         when(saleRepository.findCollectedAmountByClientInYearGrouped(anyInt())).thenReturn(List.<Object[]>of());
         when(saleRepository.findSalesByKindInMonthGrouped(anyInt(), anyInt())).thenReturn(List.<Object[]>of());
+        when(saleRepository.findProductSalesByCategoryInMonthGrouped(anyInt(), anyInt(), any(SaleKind.class)))
+                .thenReturn(List.<Object[]>of());
+        when(saleRepository.findTopProductsByUnitsInMonthGrouped(anyInt(), anyInt(), any(SaleKind.class)))
+                .thenReturn(List.<Object[]>of());
 
         when(clientRepository.count()).thenReturn(10L);
         when(clientRepository.countActiveClients()).thenReturn(6L);
@@ -270,5 +275,81 @@ class VentaQueryServicesTest {
 
         assertEquals(1, dto.getResumen().getDeudaTotal().size());
         assertEquals(0, new BigDecimal("80").compareTo(dto.getResumen().getDeudaTotal().get("USD")));
+    }
+
+    @Test
+    void getDashboardStatsAgrupaLasVentasDelMesPorCategoria() {
+        // Filas: (categoriaId, categoría, moneda, ventas, unidades, vendido)
+        when(saleRepository.findProductSalesByCategoryInMonthGrouped(anyInt(), anyInt(), any(SaleKind.class)))
+                .thenReturn(List.<Object[]>of(
+                        new Object[] { 1L, "Televisores", "ARS", 2L, 3L, new BigDecimal("90000") },
+                        new Object[] { 2L, "Celulares", "ARS", 5L, 7L, new BigDecimal("42000") },
+                        new Object[] { null, null, "ARS", 1L, 1L, new BigDecimal("5000") }));
+
+        DashboardStatsDto dto = ventaQueryServices.getDashboardStats(2026, 8, null);
+
+        assertEquals(3, dto.getPorCategoriaProducto().size());
+        // Orden por unidades vendidas (7, 3 y 1), nunca por monto (cruzaría monedas)
+        DashboardStatsDto.CategorySales primera = dto.getPorCategoriaProducto().get(0);
+        assertEquals("Celulares", primera.getCategoryName());
+        assertEquals(7, primera.getUnidades());
+        assertEquals(5, primera.getTotalVentas());
+        assertEquals(0, new BigDecimal("42000").compareTo(primera.getTotalVendido().get("ARS")));
+        assertEquals("Televisores", dto.getPorCategoriaProducto().get(1).getCategoryName());
+        assertEquals(3, dto.getPorCategoriaProducto().get(1).getUnidades());
+        // La venta legada sin categoría no desaparece: queda etiquetada
+        DashboardStatsDto.CategorySales sinCategoria = dto.getPorCategoriaProducto().get(2);
+        assertNull(sinCategoria.getCategoryId());
+        assertEquals("Sin categoría", sinCategoria.getCategoryName());
+        assertEquals(1, sinCategoria.getUnidades());
+        // Solo las ventas de productos alimentan la métrica (nunca los préstamos)
+        verify(saleRepository).findProductSalesByCategoryInMonthGrouped(2026, 8, SaleKind.VENTA);
+    }
+
+    @Test
+    void getDashboardStatsAcotaCategoriasYProductosALaMonedaFiltrada() {
+        when(saleRepository.findProductSalesByCategoryInMonthGrouped(anyInt(), anyInt(), any(SaleKind.class)))
+                .thenReturn(List.<Object[]>of(
+                        new Object[] { 1L, "Televisores", "ARS", 2L, 3L, new BigDecimal("90000") },
+                        new Object[] { 1L, "Televisores", "USD", 1L, 1L, new BigDecimal("200") }));
+        when(saleRepository.findTopProductsByUnitsInMonthGrouped(anyInt(), anyInt(), any(SaleKind.class)))
+                .thenReturn(List.<Object[]>of(
+                        new Object[] { 9L, "Smart TV 55", "ARS", 2L, 3L, new BigDecimal("90000") },
+                        new Object[] { 9L, "Smart TV 55", "USD", 1L, 1L, new BigDecimal("200") }));
+
+        DashboardStatsDto dto = ventaQueryServices.getDashboardStats(2026, 8, "usd");
+
+        // El filtro acota montos Y conteos también en estas métricas
+        assertEquals(1, dto.getPorCategoriaProducto().size());
+        assertEquals(1, dto.getPorCategoriaProducto().get(0).getUnidades());
+        assertEquals(1, dto.getPorCategoriaProducto().get(0).getTotalVentas());
+        assertEquals(0, new BigDecimal("200").compareTo(dto.getPorCategoriaProducto().get(0).getTotalVendido().get("USD")));
+        assertEquals(1, dto.getTopProductos().size());
+        assertEquals(1, dto.getTopProductos().get(0).getUnidades());
+        assertTrue(dto.getTopProductos().get(0).getTotalVendido().containsKey("USD"));
+    }
+
+    @Test
+    void getDashboardStatsTopProductosOrdenaPorUnidadesYLimitaACinco() {
+        // Seis productos: el ranking corta en 5 y ordena por unidades (el más
+        // caro en plata tiene una sola unidad y no entra)
+        when(saleRepository.findTopProductsByUnitsInMonthGrouped(anyInt(), anyInt(), any(SaleKind.class)))
+                .thenReturn(List.<Object[]>of(
+                        new Object[] { 1L, "Auriculares", "ARS", 4L, 9L, new BigDecimal("45000") },
+                        new Object[] { 2L, "Fundas", "ARS", 10L, 12L, new BigDecimal("12000") },
+                        new Object[] { 3L, "Cargadores", "ARS", 6L, 6L, new BigDecimal("18000") },
+                        new Object[] { 4L, "Parlantes", "ARS", 3L, 4L, new BigDecimal("40000") },
+                        new Object[] { 5L, "Smart TV 65", "ARS", 1L, 1L, new BigDecimal("900000") },
+                        new Object[] { 6L, "Teclados", "ARS", 1L, 2L, new BigDecimal("15000") }));
+
+        DashboardStatsDto dto = ventaQueryServices.getDashboardStats(2026, 8, null);
+
+        assertEquals(5, dto.getTopProductos().size());
+        DashboardStatsDto.TopProduct primero = dto.getTopProductos().get(0);
+        assertEquals("Fundas", primero.getProductName());
+        assertEquals(12, primero.getUnidades());
+        assertEquals(0, new BigDecimal("12000").compareTo(primero.getTotalVendido().get("ARS")));
+        // El más caro (1 unidad) queda afuera: manda la cantidad, no el monto
+        assertTrue(dto.getTopProductos().stream().noneMatch(p -> p.getProductId() == 5L));
     }
 }

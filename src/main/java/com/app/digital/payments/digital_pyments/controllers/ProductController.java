@@ -2,12 +2,15 @@ package com.app.digital.payments.digital_pyments.controllers;
 
 import java.util.Map;
 
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.app.digital.payments.digital_pyments.models.Role;
+import com.app.digital.payments.digital_pyments.models.dtos.BulkPriceRequestDto;
 import com.app.digital.payments.digital_pyments.models.dtos.ProductRequestDto;
 import com.app.digital.payments.digital_pyments.services.ProductServices;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -55,6 +58,34 @@ public class ProductController {
             return ResponseEntity.ok(Map.of("deleted", true));
         }
         return ResponseEntity.badRequest().body(Map.of("deleted", false));
+    }
+
+    // ------------------------------------------------------------------
+    // Ajuste masivo de precios
+    // ------------------------------------------------------------------
+
+    /** Preview: qué quedaría en cada SKU. No escribe nada. */
+    @PostMapping("/bulk-price/preview")
+    public ResponseEntity<?> previewBulkPrice(@RequestBody BulkPriceRequestDto request) {
+        return ResponseEntity.ok(productServices.previewBulkPrice(request));
+    }
+
+    /** Aplica el ajuste y registra el historial. */
+    @PostMapping("/bulk-price")
+    public ResponseEntity<?> aplicarAjusteMasivo(@RequestBody BulkPriceRequestDto request) {
+        try {
+            return ResponseEntity.ok(productServices.applyBulkPrice(request));
+        } catch (OptimisticLockingFailureException e) {
+            // El manejador global habla de "cobro": acá el conflicto es del catálogo.
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("message", "El catálogo cambió mientras se aplicaba el ajuste. Volvé a intentar."));
+        }
+    }
+
+    /** Historial de precios del producto, del más reciente al más viejo. */
+    @GetMapping("/{id}/price-history")
+    public ResponseEntity<?> historialDePrecios(@PathVariable Long id) {
+        return ResponseEntity.ok(productServices.priceHistory(id));
     }
 
 }

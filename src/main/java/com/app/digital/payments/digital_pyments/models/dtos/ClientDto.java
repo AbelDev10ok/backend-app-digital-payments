@@ -9,6 +9,10 @@ public class ClientDto {
     private String telefono;
     private String email;
     private String direccion;
+    // Partes del domicilio para desambiguar la direccion en la agenda y el remito
+    private String localidad;
+    private String provincia;
+    private String codigoPostal;
     private boolean isSeller;
     // Vendedor asignado (cartera): la edición lo necesita para no perder la
     // asignación al guardar; antes sólo viajaba el nombre.
@@ -17,6 +21,9 @@ public class ClientDto {
     private String dni;
     // Deuda por moneda ISO 4217: las monedas distintas nunca se suman
     private Map<String, BigDecimal> deudaTotal;
+    // Clientes en cartera cuando este cliente es vendedor: lo usa el diálogo de
+    // baja para decir cuántos clientes hay que resolver antes de deshabilitarlo.
+    private Long clientesEnCartera;
 
     public ClientDto() {
     }
@@ -76,6 +83,30 @@ public class ClientDto {
         this.direccion = direccion;
     }
 
+    public String getLocalidad() {
+        return localidad;
+    }
+
+    public void setLocalidad(String localidad) {
+        this.localidad = localidad;
+    }
+
+    public String getProvincia() {
+        return provincia;
+    }
+
+    public void setProvincia(String provincia) {
+        this.provincia = provincia;
+    }
+
+    public String getCodigoPostal() {
+        return codigoPostal;
+    }
+
+    public void setCodigoPostal(String codigoPostal) {
+        this.codigoPostal = codigoPostal;
+    }
+
     public void setSeller(boolean isSeller) {
         this.isSeller = isSeller;
     }
@@ -110,5 +141,13 @@ public class ClientDto {
 
     public void setDeudaTotal(Map<String, BigDecimal> deudaTotal) {
         this.deudaTotal = deudaTotal;
+    }
+
+    public Long getClientesEnCartera() {
+        return clientesEnCartera;
+    }
+
+    public void setClientesEnCartera(Long clientesEnCartera) {
+        this.clientesEnCartera = clientesEnCartera;
     }
 }

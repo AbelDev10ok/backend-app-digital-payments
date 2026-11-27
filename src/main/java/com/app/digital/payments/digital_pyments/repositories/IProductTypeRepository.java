@@ -1,5 +1,6 @@
 package com.app.digital.payments.digital_pyments.repositories;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -7,6 +8,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.app.digital.payments.digital_pyments.models.ProductType;
 
 public interface IProductTypeRepository extends JpaRepository<ProductType, Long> {
+
+    // Categorías del negocio: el ajuste masivo por categoría arma la rama en memoria.
+    List<ProductType> findAllByBusinessId(Long businessId);
 
     // Método para encontrar un ProductType por su nombre
     Optional<ProductType> findByName(String name);

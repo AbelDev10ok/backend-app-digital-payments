@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.app.digital.payments.digital_pyments.models.dtos.ClientDto;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientRequestDto;
+import com.app.digital.payments.digital_pyments.models.dtos.SellerDeactivationRequest;
 import com.app.digital.payments.digital_pyments.services.VentaQueryServices;
 import com.app.digital.payments.digital_pyments.services.iservices.IClientServices;
 import com.app.digital.payments.digital_pyments.utils.ApiResponse;
@@ -133,10 +134,14 @@ public class ClientController {
         return ResponseEntity.ok("Cliente habilitado como vendedor");
     }
 
-    // deshabilitar cliente como vendedor
+    // deshabilitar cliente como vendedor. Si tiene clientes en cartera hay que
+    // decir qué hacer con ellos: traspasarlos a otro vendedor o dejarlos sin
+    // vendedor (la fila "Sin vendedor" del tablero, que cobra el negocio).
     @PutMapping("/{id}/desabilitar")
-    public ResponseEntity<?> deshabilitarCliente(@PathVariable Long id) {
-        clientServices.deshabilitarClientVendedor(id);
+    public ResponseEntity<?> deshabilitarCliente(
+            @PathVariable Long id,
+            @RequestBody(required = false) SellerDeactivationRequest request) {
+        clientServices.deshabilitarClientVendedor(id, request);
         return ResponseEntity.ok("Cliente deshabilitado como vendedor");
     }
 

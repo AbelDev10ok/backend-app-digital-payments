@@ -11,12 +11,20 @@ public class ClientRequestDto {
     @Size(min = 2, max = 15, message = "El nombre debe tener entre 2 y 15 caracteres")
     private String name;
     @NotBlank(message = "El teléfono es obligatorio")
-    @Pattern(regexp = "^[0-9]{10,15}$", message = "El teléfono debe contener solo números y tener entre 10 y 15 dígitos")
+    // El frontend normaliza a E.164 argentino (+549 + área + número); los
+    // legados sin normalizar quedan sólo con dígitos. El "+" es opcional.
+    @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "El teléfono debe tener entre 10 y 15 dígitos, con un + opcional al inicio")
     private String telefono;
     @Email(message = "El email debe tener un formato válido")
     private String email;
     @Size(max = 120, message = "La dirección no puede exceder los 120 caracteres")
     private String direccion;
+    @Size(max = 80, message = "La localidad no puede exceder los 80 caracteres")
+    private String localidad;
+    @Size(max = 40, message = "La provincia no puede exceder los 40 caracteres")
+    private String provincia;
+    @Size(max = 10, message = "El código postal no puede exceder los 10 caracteres")
+    private String codigoPostal;
 
     // validar dni unico
     // PATTERN de 8 numeros
@@ -71,6 +79,30 @@ public class ClientRequestDto {
 
     public void setDireccion(String direccion) {
         this.direccion = direccion;
+    }
+
+    public String getLocalidad() {
+        return localidad;
+    }
+
+    public void setLocalidad(String localidad) {
+        this.localidad = localidad;
+    }
+
+    public String getProvincia() {
+        return provincia;
+    }
+
+    public void setProvincia(String provincia) {
+        this.provincia = provincia;
+    }
+
+    public String getCodigoPostal() {
+        return codigoPostal;
+    }
+
+    public void setCodigoPostal(String codigoPostal) {
+        this.codigoPostal = codigoPostal;
     }
 
     public Long getSellerId() {

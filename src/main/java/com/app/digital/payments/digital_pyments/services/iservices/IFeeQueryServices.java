@@ -1,6 +1,7 @@
 package com.app.digital.payments.digital_pyments.services.iservices;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,6 +30,17 @@ public interface IFeeQueryServices {
     /**
      * Agenda de cobros del dia: pendientes que vencen hoy + vencidas,
      * ordenadas por antiguedad de vencimiento.
+     *
+     * @param fecha    fecha de corte (hoy si es null)
+     * @param sellerId filtra por la cartera del cliente (quien lo atiende), no
+     *                 por la autoria de la venta
      */
-    CobrosHoyResponseDto getCobrosDeHoy(LocalDate fecha);
+    CobrosHoyResponseDto getCobrosDeHoy(LocalDate fecha, Long sellerId);
+
+    /**
+     * Cuotas pendientes del negocio hasta la fecha, sin pasar por el
+     * TenantContext: lo usa el job diario que arma la ronda (corre fuera de un
+     * request y no tiene el tenantFilter habilitado).
+     */
+    List<CuotaListItemDto> cuotasPendientesDelNegocio(Long businessId, LocalDate fecha);
 }

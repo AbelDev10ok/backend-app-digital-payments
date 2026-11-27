@@ -25,16 +25,20 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import com.app.digital.payments.digital_pyments.models.Business;
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
 import com.app.digital.payments.digital_pyments.models.Payment;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
 import com.app.digital.payments.digital_pyments.models.dtos.PaymentDto;
+import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.repositories.IPaymentRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
+import com.app.digital.payments.digital_pyments.utils.TenantContext;
 import com.app.digital.payments.digital_pyments.utils.Payments;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
 
@@ -49,6 +53,12 @@ class FeeServicesTest {
     @Mock
     private IPaymentRepository paymentRepository;
 
+    @Mock
+    private IClientRepository clientRepository;
+
+    @Mock
+    private IPaymentPromiseRepository promiseRepository;
+
     private FeeServices feeServices;
 
     private Sale sale;
@@ -58,7 +68,7 @@ class FeeServicesTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository);
+        feeServices = new FeeServices(feeRepository, saleRepository, paymentRepository, clientRepository, promiseRepository);
 
         sale = spy(new Sale());
         sale.setId(1L);
@@ -974,6 +984,78 @@ class FeeServicesTest {
             assertEquals(0, new BigDecimal("100").compareTo(aEditar.getAmount()));
             assertEquals(0, new BigDecimal("100").compareTo(ultimaImpaga.getAmount()));
             assertEquals(0, new BigDecimal("220").compareTo(sale.getRemainingAmount()));
+        }
+    }
+
+    @Nested
+    class Recordatorio {
+
+        @Test
+        void sellaLaFechaYSumaUnoAlConteo() {
+            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+            LocalDateTime antes = LocalDateTime.now().minusSeconds(1);
+            feeServices.marcarRecordatorio(1L);
+
+            assertNotNull(fee.getLastRemindedAt());
+            assertFalse(fee.getLastRemindedAt().isBefore(antes));
+            assertEquals(1, fee.getReminderCount());
+            verify(feeRepository).save(fee);
+        }
+
+        @Test
+        void sumaAlConteoExistente() {
+            fee.setReminderCount(2);
+            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+            feeServices.marcarRecordatorio(1L);
+
+            assertEquals(3, fee.getReminderCount());
+        }
+
+        @Test
+        void rechazaUnaCuotaYaCobradaSinMutarNiGuardar() {
+            fee.setPaid(true);
+            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                    () -> feeServices.marcarRecordatorio(1L));
+
+            assertEquals("La cuota ya está cobrada", error.getMessage());
+            assertNull(fee.getLastRemindedAt());
+            assertEquals(0, fee.getReminderCount());
+            verify(feeRepository, never()).save(any(Fee.class));
+        }
+
+        @Test
+        void rechazaUnaVentaAnulada() {
+            sale.setStatus(SaleStatus.CANCELED);
+            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                    () -> feeServices.marcarRecordatorio(1L));
+
+            assertEquals("La operación está anulada", error.getMessage());
+            verify(feeRepository, never()).save(any(Fee.class));
+        }
+
+        @Test
+        void rechazaUnaCuotaDeOtroNegocio() {
+            Business otroNegocio = new Business();
+            otroNegocio.setId(2L);
+            fee.setBusiness(otroNegocio);
+            when(feeRepository.findById(1L)).thenReturn(java.util.Optional.of(fee));
+
+            TenantContext.setBusinessId(1L);
+            try {
+                RuntimeException error = assertThrows(RuntimeException.class,
+                        () -> feeServices.marcarRecordatorio(1L));
+
+                assertEquals("Recurso no encontrado", error.getMessage());
+                verify(feeRepository, never()).save(any(Fee.class));
+            } finally {
+                TenantContext.clear();
+            }
         }
     }
 

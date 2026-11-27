@@ -1,6 +1,7 @@
 package com.app.digital.payments.digital_pyments.services;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,6 +25,7 @@ import com.app.digital.payments.digital_pyments.models.Business;
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientDto;
 import com.app.digital.payments.digital_pyments.models.dtos.ClientRequestDto;
+import com.app.digital.payments.digital_pyments.models.dtos.SellerDeactivationRequest;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
 import com.app.digital.payments.digital_pyments.repositories.IClientRepository;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
@@ -132,6 +134,46 @@ class ClientServicesTest {
         assertThrows(RuntimeException.class, () -> clientServices.createClient(dtoValido()));
     }
 
+    @Test
+    void createClientGuardaElDomicilioEstructurado() {
+        when(clientRepository.findByDni("12345678")).thenReturn(Optional.empty());
+        when(clientRepository.findByEmail("juan@example.com")).thenReturn(Optional.empty());
+        when(clientRepository.save(any(Client.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ClientRequestDto dto = dtoValido();
+        dto.setLocalidad("Rafael Calzada");
+        dto.setProvincia("Buenos Aires");
+        dto.setCodigoPostal("B1847");
+
+        ClientDto result = clientServices.createClient(dto);
+
+        assertEquals("Rafael Calzada", result.getLocalidad());
+        assertEquals("Buenos Aires", result.getProvincia());
+        assertEquals("B1847", result.getCodigoPostal());
+    }
+
+    @Test
+    void updateClientActualizaElDomicilioEstructurado() {
+        Client existente = new Client();
+        existente.setId(1L);
+        Business business = new Business();
+        business.setId(1L);
+        existente.setBusiness(business);
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(existente));
+        when(clientRepository.save(any(Client.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ClientRequestDto dto = dtoValido();
+        dto.setLocalidad("Rafael Calzada");
+        dto.setProvincia("Buenos Aires");
+        dto.setCodigoPostal("B1847");
+
+        ClientDto result = clientServices.updateClient(1L, dto);
+
+        assertEquals("Rafael Calzada", result.getLocalidad());
+        assertEquals("Buenos Aires", result.getProvincia());
+        assertEquals("B1847", result.getCodigoPostal());
+    }
+
     private Client clienteVendedor() {
         Client cliente = new Client();
         cliente.setId(1L);
@@ -143,29 +185,145 @@ class ClientServicesTest {
         return cliente;
     }
 
+    private Client clienteConCartera(Long id, String nombre, Client vendedor) {
+        Client cliente = new Client();
+        cliente.setId(id);
+        cliente.setName(nombre);
+        Business business = new Business();
+        business.setId(1L);
+        cliente.setBusiness(business);
+        cliente.setSeller(vendedor);
+        return cliente;
+    }
+
+    private Client vendedorDestino(Long id, String nombre) {
+        Client vendedor = clienteVendedor();
+        vendedor.setId(id);
+        vendedor.setName(nombre);
+        return vendedor;
+    }
+
     @Test
-    void deshabilitarVendedorBloqueadoCuandoTieneClientesAsignados() {
-        Client cliente = clienteVendedor();
-        when(clientRepository.findById(1L)).thenReturn(Optional.of(cliente));
-        when(clientRepository.countBySellerId(1L)).thenReturn(1L);
+    void deshabilitarVendedorTraspasaTodaLaCarteraAlOtroVendedor() {
+        Client vendedor = clienteVendedor();
+        Client destino = vendedorDestino(7L, "luis");
+        Client uno = clienteConCartera(10L, "cliente uno", vendedor);
+        Client dos = clienteConCartera(11L, "cliente dos", vendedor);
+        List<Client> cartera = List.of(uno, dos);
+
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(vendedor));
+        when(clientRepository.findCarteraBySellerId(1L, 1L)).thenReturn(cartera);
+        when(clientRepository.findById(7L)).thenReturn(Optional.of(destino));
+        when(clientRepository.save(vendedor)).thenReturn(vendedor);
+
+        SellerDeactivationRequest request = new SellerDeactivationRequest();
+        request.setTransferToSellerId(7L);
+
+        clientServices.deshabilitarClientVendedor(1L, request);
+
+        assertEquals(7L, uno.getSeller().getId());
+        assertEquals(7L, dos.getSeller().getId());
+        assertEquals(false, vendedor.isSeller());
+        verify(clientRepository).saveAll(cartera);
+        verify(clientRepository).save(vendedor);
+    }
+
+    @Test
+    void deshabilitarVendedorDejaLaCarteraSinVendedorCuandoLoPideElNegocio() {
+        Client vendedor = clienteVendedor();
+        Client uno = clienteConCartera(10L, "cliente uno", vendedor);
+        Client dos = clienteConCartera(11L, "cliente dos", vendedor);
+        List<Client> cartera = List.of(uno, dos);
+
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(vendedor));
+        when(clientRepository.findCarteraBySellerId(1L, 1L)).thenReturn(cartera);
+        when(clientRepository.save(vendedor)).thenReturn(vendedor);
+
+        SellerDeactivationRequest request = new SellerDeactivationRequest();
+        request.setLeaveClientsUnassigned(true);
+
+        clientServices.deshabilitarClientVendedor(1L, request);
+
+        assertNull(uno.getSeller());
+        assertNull(dos.getSeller());
+        assertEquals(false, vendedor.isSeller());
+        verify(clientRepository).saveAll(cartera);
+    }
+
+    @Test
+    void deshabilitarVendedorConCarteraExigeElegirQueHacer() {
+        Client vendedor = clienteVendedor();
+        Client uno = clienteConCartera(10L, "cliente uno", vendedor);
+        Client dos = clienteConCartera(11L, "cliente dos", vendedor);
+
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(vendedor));
+        when(clientRepository.findCarteraBySellerId(1L, 1L)).thenReturn(List.of(uno, dos));
 
         RuntimeException ex = assertThrows(RuntimeException.class,
-                () -> clientServices.deshabilitarClientVendedor(1L));
+                () -> clientServices.deshabilitarClientVendedor(1L, null));
 
-        assertEquals("El vendedor aún tiene clientes asignados. Reasigna o desasigna sus clientes antes de deshabilitarlo.",
-                ex.getMessage());
-        assertEquals(true, cliente.isSeller());
-        verify(clientRepository, never()).save(cliente);
+        assertTrue(ex.getMessage().contains("2 clientes"),
+                "el mensaje tiene que decir cuántos clientes quedan en cartera");
+        assertEquals(true, vendedor.isSeller());
+        verify(clientRepository, never()).save(vendedor);
+    }
+
+    @Test
+    void deshabilitarVendedorRechazaUnDestinoQueNoEsVendedor() {
+        Client vendedor = clienteVendedor();
+        Client noVendedor = new Client();
+        noVendedor.setId(7L);
+        noVendedor.setSeller(false);
+        Business business = new Business();
+        business.setId(1L);
+        noVendedor.setBusiness(business);
+
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(vendedor));
+        when(clientRepository.findCarteraBySellerId(1L, 1L))
+                .thenReturn(List.of(clienteConCartera(10L, "cliente uno", vendedor)));
+        when(clientRepository.findById(7L)).thenReturn(Optional.of(noVendedor));
+
+        SellerDeactivationRequest request = new SellerDeactivationRequest();
+        request.setTransferToSellerId(7L);
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> clientServices.deshabilitarClientVendedor(1L, request));
+
+        assertEquals("El cliente con ID: 7 no es un vendedor válido.", ex.getMessage());
+        assertEquals(true, vendedor.isSeller());
+    }
+
+    @Test
+    void deshabilitarVendedorRechazaUnDestinoQueEstaEnLaPropiaCartera() {
+        Client vendedor = clienteVendedor();
+        Client destino = vendedorDestino(10L, "luis");
+        Client otro = clienteConCartera(11L, "cliente dos", vendedor);
+
+        when(clientRepository.findById(1L)).thenReturn(Optional.of(vendedor));
+        // El destino es un vendedor, pero es cliente de quien se está deshabilitando:
+        // traspasarle la cartera lo dejaría apuntando a un vendedor inactivo.
+        when(clientRepository.findCarteraBySellerId(1L, 1L))
+                .thenReturn(List.of(clienteConCartera(10L, "luis", vendedor), otro));
+        when(clientRepository.findById(10L)).thenReturn(Optional.of(destino));
+
+        SellerDeactivationRequest request = new SellerDeactivationRequest();
+        request.setTransferToSellerId(10L);
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> clientServices.deshabilitarClientVendedor(1L, request));
+
+        assertTrue(ex.getMessage().contains("cartera"));
+        assertEquals(true, vendedor.isSeller());
     }
 
     @Test
     void deshabilitarVendedorPermiteSiNoTieneClientes() {
         Client cliente = clienteVendedor();
         when(clientRepository.findById(1L)).thenReturn(Optional.of(cliente));
-        when(clientRepository.countBySellerId(1L)).thenReturn(0L);
+        when(clientRepository.findCarteraBySellerId(1L, 1L)).thenReturn(List.of());
         when(clientRepository.save(cliente)).thenReturn(cliente);
 
-        clientServices.deshabilitarClientVendedor(1L);
+        clientServices.deshabilitarClientVendedor(1L, null);
 
         assertEquals(false, cliente.isSeller());
         verify(clientRepository).save(cliente);

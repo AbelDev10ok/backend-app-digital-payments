@@ -54,6 +54,7 @@ import com.app.digital.payments.digital_pyments.utils.PaymentMethod;
 import com.app.digital.payments.digital_pyments.utils.Payments;
 import com.app.digital.payments.digital_pyments.utils.SaleKind;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
+import com.app.digital.payments.digital_pyments.utils.StockMovementType;
 import com.app.digital.payments.digital_pyments.utils.TenantContext;
 import com.app.digital.payments.digital_pyments.utils.TenantGuard;
 
@@ -69,12 +70,14 @@ public class VentaServices implements IVentaServices {
     private final IProductVariantRepository variantRepository;
     private final IBusinessRepository businessRepository;
     private final ISaleDocumentRepository saleDocumentRepository;
+    private final StockServices stockServices;
 
     private static final Logger log = LoggerFactory.getLogger(VentaServices.class);
 
     VentaServices(ISaleRepository salesRepository, IClientRepository clientRepository, IFeeRepository feeRepository,
             IProductTypeRepository productTypeRepository, IProductVariantRepository variantRepository,
-            IBusinessRepository businessRepository, ISaleDocumentRepository saleDocumentRepository) {
+            IBusinessRepository businessRepository, ISaleDocumentRepository saleDocumentRepository,
+            StockServices stockServices) {
         this.salesRepository = salesRepository;
         this.clientRepository = clientRepository;
         this.feeRepository = feeRepository;
@@ -82,6 +85,7 @@ public class VentaServices implements IVentaServices {
         this.variantRepository = variantRepository;
         this.businessRepository = businessRepository;
         this.saleDocumentRepository = saleDocumentRepository;
+        this.stockServices = stockServices;
     }
 
     @Transactional
@@ -352,13 +356,14 @@ public class VentaServices implements IVentaServices {
             newSale.setStatus(SaleStatus.ACTIVE);
         }
 
-        // Descontar stock (V9): el stock es obligatorio y ya se validó que alcanza.
-        if (kind == SaleKind.VENTA && variant.getStock() != null) {
-            variant.setStock(variant.getStock() - quantity);
-            variantRepository.save(variant);
-        }
-
         Sale savedSale = salesRepository.save(newSale);
+
+        // El stock sale por el libro de movimientos: la caché y su historia se
+        // actualizan en la misma transacción, con el id de la venta que lo originó.
+        if (kind == SaleKind.VENTA && variant != null) {
+            stockServices.registrarMovimiento(TenantContext.requireBusinessId(), variant, StockMovementType.VENTA,
+                    -quantity, null, null, savedSale.getId());
+        }
 
         return convertirAVentaResponseDTO(savedSale);
     }
@@ -541,10 +546,10 @@ public class VentaServices implements IVentaServices {
             description = "Préstamo personal";
         }
 
-        // La variante puede cambiar en la edición: se devuelve el stock de la
-        // anterior y se descuenta el de la nueva. Los importes ya pactados no se
-        // tocan (el alta/edición no expone montos); sólo se actualiza el snapshot
-        // de precio y costo unitarios para el detalle.
+        // El stock se mueve sólo por el libro: se valida que la nueva variante
+        // alcance y después se compensa la anterior y se consume la nueva. Los
+        // importes ya pactados no se tocan (el alta/edición no expone montos);
+        // sólo se actualiza el snapshot de precio y costo unitarios.
         int cantidad = existingSale.getQuantity() != null ? existingSale.getQuantity() : 1;
         ProductVariant anterior = existingSale.getVariant();
         boolean eraVenta = existingSale.getKind() == SaleKind.VENTA && anterior != null;
@@ -553,10 +558,6 @@ public class VentaServices implements IVentaServices {
                 ? eraVenta
                 : anterior.getId() == null || !anterior.getId().equals(variant.getId());
 
-        if (eraVenta && cambiaVariante) {
-            anterior.setStock(anterior.getStock() + cantidad);
-            variantRepository.save(anterior);
-        }
         if (seraVenta && cambiaVariante) {
             int disponible = variant.getStock() != null ? variant.getStock() : 0;
             if (disponible < cantidad) {
@@ -564,8 +565,14 @@ public class VentaServices implements IVentaServices {
                         ? "No hay stock disponible de " + variant.getSku()
                         : "Stock insuficiente de " + variant.getSku() + ": quedan " + disponible + " unidades");
             }
-            variant.setStock(disponible - cantidad);
-            variantRepository.save(variant);
+        }
+        if (eraVenta && cambiaVariante) {
+            stockServices.registrarMovimiento(TenantContext.requireBusinessId(), anterior,
+                    StockMovementType.ANULACION, cantidad, null, "Edición de venta", existingSale.getId());
+        }
+        if (seraVenta && cambiaVariante) {
+            stockServices.registrarMovimiento(TenantContext.requireBusinessId(), variant,
+                    StockMovementType.VENTA, -cantidad, null, "Edición de venta", existingSale.getId());
         }
 
         existingSale.setKind(kind);
@@ -575,12 +582,11 @@ public class VentaServices implements IVentaServices {
             existingSale.setUnitPrice(variant.getPrice());
             existingSale.setCost(variant.getCost().multiply(BigDecimal.valueOf(cantidad)));
         }
+        // La autoría comercial NO se edita: se sella al crear la operación y
+        // sobrevive a cualquier edición. La cartera del cliente tampoco la
+        // reescribe; cambiar de vendedor una operación ya creada no es una
+        // corrección soportada (se anula y se vuelve a crear si hace falta).
         existingSale.setDescriptionProduct(description);
-
-        // El vendedor de la operación se corrige sólo desde acá (deliberado):
-        // reasignar la cartera del cliente no reescribe la autoría histórica.
-        // Null = sin atribuir.
-        existingSale.setSeller(resolverVendedorDeOperacion(sale.getSellerId(), existingSale.getClient()));
 
         salesRepository.save(existingSale);
     }
@@ -839,7 +845,7 @@ public class VentaServices implements IVentaServices {
         // la venta. Si ya estaba anulada, el stock se repuso al anular: no se toca
         // de nuevo (antes se sumaba dos veces).
         if (existingSale.getStatus() != SaleStatus.CANCELED) {
-            reponerStock(existingSale);
+            reponerStock(existingSale, "Venta eliminada");
         }
 
         // Limpieza defensiva: si algún documento quedó (p. ej. de otro tipo), se
@@ -850,10 +856,11 @@ public class VentaServices implements IVentaServices {
     }
 
     /**
-     * Devuelve al stock las unidades de la variante vendida. No aplica a
-     * préstamos ni a registros sin variante (legados).
+     * Devuelve al stock las unidades de la variante vendida, asentando el
+     * movimiento ANULACION en el libro. No aplica a préstamos ni a registros sin
+     * variante (legados).
      */
-    private void reponerStock(Sale sale) {
+    private void reponerStock(Sale sale, String reason) {
         if (sale.getKind() != SaleKind.VENTA || sale.getVariant() == null) {
             return;
         }
@@ -862,8 +869,11 @@ public class VentaServices implements IVentaServices {
         if (cantidad <= 0) {
             return;
         }
-        variante.setStock((variante.getStock() != null ? variante.getStock() : 0) + cantidad);
-        variantRepository.save(variante);
+        Long negocioId = sale.getBusiness() != null && sale.getBusiness().getId() != null
+                ? sale.getBusiness().getId()
+                : TenantContext.requireBusinessId();
+        stockServices.registrarMovimiento(negocioId, variante, StockMovementType.ANULACION, cantidad, null, reason,
+                sale.getId());
     }
 
     // Anula una venta o préstamo: conserva el registro con estado CANCELADO (queda
@@ -912,7 +922,8 @@ public class VentaServices implements IVentaServices {
         sale.setCancelReason(limpiarTexto(reason));
 
         if (restock) {
-            reponerStock(sale);
+            String motivo = limpiarTexto(reason);
+            reponerStock(sale, motivo != null ? "Anulación: " + motivo : "Venta anulada");
         }
 
         SaleResponseDto dto = convertirAVentaResponseDTO(salesRepository.save(sale));

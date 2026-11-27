@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,7 +18,6 @@ import com.app.digital.payments.digital_pyments.models.ProductType;
 import com.app.digital.payments.digital_pyments.models.Role;
 import com.app.digital.payments.digital_pyments.models.Usuario;
 import com.app.digital.payments.digital_pyments.models.dtos.ChangePasswordRequestDto;
-import com.app.digital.payments.digital_pyments.models.dtos.EmailDto;
 import com.app.digital.payments.digital_pyments.models.dtos.UsuarioAuth;
 import com.app.digital.payments.digital_pyments.models.dtos.UsuarioResponse;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
@@ -55,10 +55,15 @@ public class UsuarioServices {
 
     private final JwtUtil jwtUtil;
 
+    // URL publica del frontend (app.frontend-url): los mails mandan al usuario
+    // a las paginas de la SPA, nunca a un endpoint del backend.
+    private final String frontendUrl;
+
     public UsuarioServices(IUsuarioRepository usuarioRepository, IRoleRepository roleRepository,
             PasswordEncoder passwordEncoder, EmailServices emailServices,
             IBusinessRepository businessRepository, IProductTypeRepository productTypeRepository,
-            JwtUtil jwtUtil) {
+            JwtUtil jwtUtil,
+            @Value("${app.frontend-url:}") String frontendUrl) {
         this.usuarioRepository = usuarioRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
@@ -66,6 +71,7 @@ public class UsuarioServices {
         this.businessRepository = businessRepository;
         this.productTypeRepository = productTypeRepository;
         this.jwtUtil = jwtUtil;
+        this.frontendUrl = frontendUrl;
     }
 
     @Transactional(readOnly=true)
@@ -144,15 +150,10 @@ public class UsuarioServices {
         usuarioRepository.save(userDb);
 
         // 4. Preparar y enviar el email de verificación
-        EmailDto emailDto = new EmailDto();
-        emailDto.setDestinatario(user.getEmail());
-        emailDto.setAsunto("Confirmación de correo electrónico");
-        
-        String verificationLink = "http://localhost:8080/auth/verify?token=" + verificationToken;
-        String mensaje = "Hola, haz clic en el siguiente enlace para verificar tu correo: " + verificationLink;
-        emailDto.setMensaje(mensaje);
-        
-        emailServices.sendEmail(emailDto);
+        // El enlace abre la página del frontend: el endpoint del backend solo
+        // devuelve JSON, así que el mail no puede apuntar a /auth/verify.
+        String verificationLink = frontendUrl + "/verify?token=" + verificationToken;
+        emailServices.sendVerificationEmail(user.getEmail(), verificationLink);
         
         // En el controlador, puedes devolver un mensaje al usuario indicando
         // que revise su correo para completar el registro.
@@ -213,15 +214,10 @@ public class UsuarioServices {
         usuarioRepository.save(usuario);
 
         // 2. Preparar y enviar el email
-        EmailDto emailDto = new EmailDto();
-        emailDto.setDestinatario(email);
-        emailDto.setAsunto("Restablecimiento de Contraseña");
-        
-        String resetLink = "http://localhost:8080/auth/reset-password?token=" + resetToken;
-        String mensaje = "Hola, haz clic en el siguiente enlace para restablecer tu contraseña: " + resetLink;
-        emailDto.setMensaje(mensaje);
-        
-        emailServices.sendEmail(emailDto);
+        // El enlace abre la pagina del frontend: el endpoint del backend solo
+        // acepta POST, asi que el mail no puede apuntar a /auth/reset-password.
+        String resetLink = frontendUrl + "/reset-password?token=" + resetToken;
+        emailServices.sendPasswordResetEmail(email, resetLink);
     }
 
     @Transactional

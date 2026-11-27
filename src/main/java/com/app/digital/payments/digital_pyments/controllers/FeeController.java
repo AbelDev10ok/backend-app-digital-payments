@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.app.digital.payments.digital_pyments.models.dtos.ClientPaymentResultDto;
 import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.CuotaListItemDto;
 import com.app.digital.payments.digital_pyments.models.dtos.FeeDto;
@@ -52,11 +53,13 @@ public class FeeController {
 
     /**
      * Agenda de cobros del dia: cuotas que vencen hoy + vencidas, con resumen.
+     * `sellerId` filtra por la cartera del cliente: quien lo atiende es quien cobra.
      */
     @GetMapping("/collections/today")
     public ResponseEntity<CobrosHoyResponseDto> getCobrosDeHoy(
-            @RequestParam(required = false) LocalDate date) {
-        return ResponseEntity.ok(feeQueryServices.getCobrosDeHoy(date));
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false) Long sellerId) {
+        return ResponseEntity.ok(feeQueryServices.getCobrosDeHoy(date, sellerId));
     }
 
     @PostMapping("/collects-fee/{feeId}/pay")
@@ -78,6 +81,22 @@ public class FeeController {
     }
 
     /**
+     * Cobro por cliente: un monto distribuido entre todas las operaciones del
+     * cliente con deuda en la misma moneda, de la deuda mas vieja a la mas nueva.
+     */
+    @PostMapping("/clients/{clientId}/pay")
+    public ResponseEntity<ApiResponse> registerClientPayment(
+            @PathVariable Long clientId,
+            @RequestParam BigDecimal amount,
+            @RequestParam(name = "date") LocalDate date,
+            @RequestParam(name = "currency") String currency,
+            @RequestParam(name = "paymentMethod", required = false, defaultValue = "EFECTIVO") String paymentMethod) {
+        ClientPaymentResultDto resultado = feeServices.registerClientPayment(
+                clientId, amount, date, paymentMethod, currency);
+        return ResponseEntity.ok(new ApiResponse("Cobro registrado correctamente", HttpStatus.OK, resultado));
+    }
+
+    /**
      * Historial de cobros de una cuota (con fecha y hora de cada pago).
      */
     @GetMapping("/fee/{feeId}/payments")
@@ -96,6 +115,16 @@ public class FeeController {
             FeeDto updatedFee = feeServices.postponeFee(feeId, newDateExpiration, newDatePayment, amount);
             return ResponseEntity.ok(new ApiResponse("Cuota pospuesta correctamente", HttpStatus.OK, updatedFee));
 
+    }
+
+    /**
+     * Registra que se le reclamo la cuota al cliente por WhatsApp (envio manual).
+     * La agenda usa la marca para saber a quien ya se le recordo y no repetirlo.
+     */
+    @PostMapping("/fee/{feeId}/reminder")
+    public ResponseEntity<ApiResponse> marcarRecordatorio(@PathVariable Long feeId) {
+        return ResponseEntity.ok(new ApiResponse("Recordatorio registrado", HttpStatus.OK,
+                feeServices.marcarRecordatorio(feeId)));
     }
 
     /**

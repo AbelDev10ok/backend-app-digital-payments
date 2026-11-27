@@ -18,10 +18,6 @@ public class SaleUpdateRequestDto {    @NonNull
     @IValueOfEnum(enumClass = SaleKind.class, message = "El tipo de transacción debe ser VENTA o PRESTAMO")
     private String kind;
 
-    // Corrección deliberada del vendedor sellado en la operación. Null = sin
-    // atribuir (las reasignaciones del cliente no pasan por acá).
-    private Long sellerId;
-
     public String getDescriptionProduct() {
         return descriptionProduct;
     }
@@ -54,15 +50,4 @@ public class SaleUpdateRequestDto {    @NonNull
         this.kind = kind;
     }
 
-    public Long getSellerId() {
-        return sellerId;
-    }
-
-    public void setSellerId(Long sellerId) {
-        this.sellerId = sellerId;
-    }
-
-    
-    
-    
 }

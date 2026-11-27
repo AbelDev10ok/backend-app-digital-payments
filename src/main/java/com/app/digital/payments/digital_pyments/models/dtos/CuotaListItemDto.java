@@ -16,6 +16,8 @@ public class CuotaListItemDto {
     private Long clientId;
     private String clientName;
     private String clientPhone;
+    // Direccion del cliente: la usa la agenda para armar la ruta de cobro
+    private String clientAddress;
     private String saleDescription;
     private String saleKind; // VENTA | PRESTAMO
     private Integer numeroCuota;
@@ -36,6 +38,11 @@ public class CuotaListItemDto {
     private String currency;
     private Long diasAtraso;
     private String estado; // TODAY | DELAYED | UPCOMING | PAID
+
+    // Ultimo recordatorio de pago registrado por el negocio (envio manual por
+    // WhatsApp) y cuantas veces se le reclamo esta cuota al cliente.
+    private LocalDateTime ultimoRecordatorio;
+    private Integer recordatorios;
 
     public CuotaListItemDto() {
     }
@@ -78,6 +85,14 @@ public class CuotaListItemDto {
 
     public void setClientPhone(String clientPhone) {
         this.clientPhone = clientPhone;
+    }
+
+    public String getClientAddress() {
+        return clientAddress;
+    }
+
+    public void setClientAddress(String clientAddress) {
+        this.clientAddress = clientAddress;
     }
 
     public String getSaleDescription() {
@@ -190,5 +205,21 @@ public class CuotaListItemDto {
 
     public void setCurrency(String currency) {
         this.currency = currency;
+    }
+
+    public LocalDateTime getUltimoRecordatorio() {
+        return ultimoRecordatorio;
+    }
+
+    public void setUltimoRecordatorio(LocalDateTime ultimoRecordatorio) {
+        this.ultimoRecordatorio = ultimoRecordatorio;
+    }
+
+    public Integer getRecordatorios() {
+        return recordatorios;
+    }
+
+    public void setRecordatorios(Integer recordatorios) {
+        this.recordatorios = recordatorios;
     }
 }

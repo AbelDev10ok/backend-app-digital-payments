@@ -85,6 +85,8 @@ class SaleDocumentServicesTest {
         client.setName("Juana Pérez");
         client.setDni("30111222");
         client.setDireccion("Calle Falsa 742");
+        client.setLocalidad("Springfield");
+        client.setProvincia("Buenos Aires");
         client.setTelefono("1144445555");
         return client;
     }
@@ -162,7 +164,7 @@ class SaleDocumentServicesTest {
 
         assertEquals("Juana Pérez", dto.getClientName());
         assertEquals("30111222", dto.getClientDoc());
-        assertEquals("Calle Falsa 742", dto.getClientAddress());
+        assertEquals("Calle Falsa 742, Springfield, Buenos Aires", dto.getClientAddress());
         assertEquals("1144445555", dto.getClientPhone());
 
         assertEquals("Televisor 32 pulgadas", dto.getProductName());

@@ -16,15 +16,21 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.app.digital.payments.digital_pyments.models.Client;
 import com.app.digital.payments.digital_pyments.models.Fee;
+import com.app.digital.payments.digital_pyments.models.PaymentPromise;
 import com.app.digital.payments.digital_pyments.models.Sale;
 import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto;
 import com.app.digital.payments.digital_pyments.models.dtos.CobrosHoyResponseDto.Resumen;
 import com.app.digital.payments.digital_pyments.models.dtos.CuotaListItemDto;
+import com.app.digital.payments.digital_pyments.models.dtos.PaymentPromiseDto;
 import com.app.digital.payments.digital_pyments.repositories.IFeeRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPaymentPromiseRepository;
 import com.app.digital.payments.digital_pyments.services.iservices.IFeeQueryServices;
 import com.app.digital.payments.digital_pyments.utils.CurrencyUtils;
+import com.app.digital.payments.digital_pyments.utils.DireccionUtils;
 import com.app.digital.payments.digital_pyments.utils.FeeStatus;
+import com.app.digital.payments.digital_pyments.utils.PromiseStatus;
 import com.app.digital.payments.digital_pyments.utils.SaleStatus;
+import com.app.digital.payments.digital_pyments.mappers.PaymentPromiseMapper;
 
 import jakarta.persistence.criteria.Predicate;
 
@@ -34,9 +40,11 @@ public class FeeQueryServices implements IFeeQueryServices {
     private static final int MAX_ITEMS_COBROS_HOY = 200;
 
     private final IFeeRepository feeRepository;
+    private final IPaymentPromiseRepository promiseRepository;
 
-    public FeeQueryServices(IFeeRepository feeRepository) {
+    public FeeQueryServices(IFeeRepository feeRepository, IPaymentPromiseRepository promiseRepository) {
         this.feeRepository = feeRepository;
+        this.promiseRepository = promiseRepository;
     }
 
     @Override
@@ -57,23 +65,73 @@ public class FeeQueryServices implements IFeeQueryServices {
 
     @Override
     @Transactional(readOnly = true)
-    public CobrosHoyResponseDto getCobrosDeHoy(LocalDate fecha) {
+    public CobrosHoyResponseDto getCobrosDeHoy(LocalDate fecha, Long sellerId) {
         LocalDate hoy = fecha != null ? fecha : LocalDate.now();
         CobrosHoyResponseDto response = new CobrosHoyResponseDto();
         response.setFecha(hoy);
 
-        aplicarResumen(response.getHoy(), feeRepository.sumPendingFeesByExpirationDateGrouped(hoy));
-        aplicarResumen(response.getVencidas(), feeRepository.sumOverdueFeesBeforeGrouped(hoy));
+        // El resumen acompaña al filtro: una agenda por vendedor no puede mostrar
+        // totales del negocio entero.
+        if (sellerId == null) {
+            aplicarResumen(response.getHoy(), feeRepository.sumPendingFeesByExpirationDateGrouped(hoy));
+            aplicarResumen(response.getVencidas(), feeRepository.sumOverdueFeesBeforeGrouped(hoy));
+        } else {
+            aplicarResumen(response.getHoy(),
+                    feeRepository.sumPendingFeesByExpirationDateGroupedBySeller(hoy, sellerId));
+            aplicarResumen(response.getVencidas(),
+                    feeRepository.sumOverdueFeesBeforeGroupedBySeller(hoy, sellerId));
+        }
 
-        Specification<Fee> spec = (root, query, cb) -> cb.and(
-                cb.isFalse(root.get("paid")),
-                cb.lessThanOrEqualTo(root.get("expirationDate"), hoy),
-                cb.notEqual(root.get("sale").get("status"), SaleStatus.CANCELED));
+        Specification<Fee> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get("paid")));
+            predicates.add(cb.lessThanOrEqualTo(root.get("expirationDate"), hoy));
+            predicates.add(cb.notEqual(root.get("sale").get("status"), SaleStatus.CANCELED));
+            if (sellerId != null) {
+                // Cartera del cliente, no autoria de la venta: quien atiende al
+                // cliente es quien cobra, aunque la operacion la haya vendido otro.
+                predicates.add(cb.equal(root.get("sale").get("client").get("seller").get("id"), sellerId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
         Page<CuotaListItemDto> page = feeRepository.findAll(spec,
                 PageRequest.of(0, MAX_ITEMS_COBROS_HOY, Sort.by(Sort.Direction.ASC, "expirationDate")))
                 .map(fee -> toDto(fee, hoy));
         response.setItems(page.getContent());
+        // La agenda se lee por cliente + moneda: las promesas pendientes viajan en
+        // la misma respuesta para que la UI marque a quién ya se le prometió algo.
+        response.setPromesas(promesasPendientes(page.getContent(), hoy));
         return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CuotaListItemDto> cuotasPendientesDelNegocio(Long businessId, LocalDate fecha) {
+        LocalDate hoy = fecha != null ? fecha : LocalDate.now();
+        return feeRepository.findPendingForRound(businessId, hoy).stream()
+                .map(fee -> toDto(fee, hoy))
+                .toList();
+    }
+
+    /**
+     * Promesas pendientes de los clientes que aparecen en la agenda, en una sola
+     * consulta. Una promesa vencida sigue pendiente: se muestra igual, marcada.
+     */
+    private List<PaymentPromiseDto> promesasPendientes(List<CuotaListItemDto> items, LocalDate hoy) {
+        List<Long> clientIds = items.stream()
+                .map(CuotaListItemDto::getClientId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (clientIds.isEmpty()) {
+            return List.of();
+        }
+        List<PaymentPromise> promesas = promiseRepository
+                .findByClientIdInAndStatusOrderByPromisedDateAsc(clientIds, PromiseStatus.PENDING);
+        if (promesas == null || promesas.isEmpty()) {
+            return List.of();
+        }
+        return promesas.stream().map(promesa -> PaymentPromiseMapper.toDto(promesa, hoy)).toList();
     }
 
     private Specification<Fee> buildSpecification(FeeStatus estado, LocalDate desde, LocalDate hasta,
@@ -137,6 +195,7 @@ public class FeeQueryServices implements IFeeQueryServices {
             dto.setClientId(client.getId());
             dto.setClientName(client.getName());
             dto.setClientPhone(client.getTelefono());
+            dto.setClientAddress(DireccionUtils.formatear(client));
         }
 
         dto.setSaleDescription(sale.getDescriptionProduct());
@@ -160,6 +219,10 @@ public class FeeQueryServices implements IFeeQueryServices {
         dto.setFechaPago(fee.getLastPaymentAt() != null ? fee.getLastPaymentAt().toLocalDate() : null);
         dto.setFechaPagoHora(fee.getLastPaymentAt());
         dto.setPaymentMethod(fee.getPaymentMethod() != null ? fee.getPaymentMethod().name() : null);
+
+        // Gestion de cobro: la agenda muestra a quien ya se le recordo y cuantas veces
+        dto.setUltimoRecordatorio(fee.getLastRemindedAt());
+        dto.setRecordatorios(fee.getReminderCount() != null ? fee.getReminderCount() : 0);
 
         if (Boolean.TRUE.equals(fee.getPaid())) {
             dto.setEstado("PAID");

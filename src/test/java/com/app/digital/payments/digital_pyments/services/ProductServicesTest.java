@@ -36,9 +36,11 @@ import com.app.digital.payments.digital_pyments.models.dtos.ProductRequestDto;
 import com.app.digital.payments.digital_pyments.models.dtos.ProductVariantRequestDto;
 import com.app.digital.payments.digital_pyments.repositories.IAttributeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IBusinessRepository;
+import com.app.digital.payments.digital_pyments.repositories.IPriceChangeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductTypeRepository;
 import com.app.digital.payments.digital_pyments.repositories.IProductVariantRepository;
+import com.app.digital.payments.digital_pyments.repositories.IStockMovementRepository;
 import com.app.digital.payments.digital_pyments.repositories.ISaleRepository;
 import com.app.digital.payments.digital_pyments.utils.TenantContext;
 
@@ -64,13 +66,17 @@ class ProductServicesTest {
     @Mock
     private IBusinessRepository businessRepository;
 
+    @Mock
+    private IPriceChangeRepository priceChangeRepository;
+
     private ProductServices productServices;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
         productServices = new ProductServices(productRepository, variantRepository, attributeRepository,
-                productTypeRepository, saleRepository, businessRepository);
+                productTypeRepository, saleRepository, businessRepository, priceChangeRepository,
+                new StockServices(variantRepository, org.mockito.Mockito.mock(IStockMovementRepository.class)));
         TenantContext.setBusinessId(NEGOCIO_ID);
     }
 
@@ -440,14 +446,33 @@ class ProductServicesTest {
         when(productTypeRepository.findById(1L)).thenReturn(Optional.of(categoria(1L)));
         when(businessRepository.getReferenceById(NEGOCIO_ID)).thenReturn(new Business("Mi negocio", "ars"));
 
-        ProductRequestDto request = pedidoSimple("TV LED", "120", "250", 9);
+        ProductRequestDto request = pedidoSimple("TV LED", "120", "250", 4);
         request.getVariants().get(0).setId(5L);
 
         assertTrue(productServices.updateProduct(5L, request));
 
         assertEquals("TV LED", product.getName());
-        assertEquals(9, variant.getStock());
+        // El formulario ya no manda stock: editar precio/nombre no lo mueve.
+        assertEquals(4, variant.getStock());
         assertEquals(0, new BigDecimal("250").compareTo(variant.getPrice()));
+    }
+
+    @Test
+    void updateProductRechazaCambiarElStockDesdeElFormulario() {
+        ProductVariant variant = variante(5L, "TV-1", "100", "200", 4);
+        Product product = productoConVariante(5L, "TV", variant);
+        when(productRepository.findById(5L)).thenReturn(Optional.of(product));
+        when(productRepository.existsByNameAndBusinessIdAndIdNot("TV", NEGOCIO_ID, 5L)).thenReturn(false);
+        when(productTypeRepository.findById(1L)).thenReturn(Optional.of(categoria(1L)));
+
+        ProductRequestDto request = pedidoSimple("TV", "100", "200", 9);
+        request.getVariants().get(0).setId(5L);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> productServices.updateProduct(5L, request));
+        assertEquals("Para cambiar el stock usá un ajuste de inventario (stock actual: 4)", error.getMessage());
+        assertEquals(4, variant.getStock());
+        verify(productRepository, never()).save(any(Product.class));
     }
 
     @Test
@@ -478,7 +503,7 @@ class ProductServicesTest {
         when(productTypeRepository.existsByParentId(1L)).thenReturn(true);
         when(businessRepository.getReferenceById(NEGOCIO_ID)).thenReturn(new Business("Mi negocio", "ars"));
 
-        ProductRequestDto request = pedidoSimple("TV LED", "120", "250", 9);
+        ProductRequestDto request = pedidoSimple("TV LED", "120", "250", 4);
         request.getVariants().get(0).setId(5L);
 
         assertTrue(productServices.updateProduct(5L, request));
