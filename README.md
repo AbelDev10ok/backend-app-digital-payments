@@ -33,8 +33,8 @@ silencio** si no hay Docker. Un build verde no prueba que corrió.
 |-----------|-----------|
 | `docs/DEPLOY.md` | Deploy a producción: base de datos, backend, variables, smoke test |
 | `docs/PROMESAS_Y_RONDA.md` | Promesas de pago y el job diario de la ronda |
-| `../../AGENTS.md` | Convenciones del workspace y del backend (fuera del repo) |
-| `../docs/MERCADO_PAGO_SETUP.md` | Suscripciones con Mercado Pago (fuera del repo) |
+| `AGENTS.md` | Reglas del backend: multi-tenant, catálogo, inventario, remitos, vendedores |
+| `docs/MERCADO_PAGO_SETUP.md` | Suscripciones con Mercado Pago |
 
 ## Convenciones que no se negocian
 

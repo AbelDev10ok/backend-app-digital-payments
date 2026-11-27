@@ -202,10 +202,10 @@ Contra producción, en este orden:
 
 ## 7. Deuda conocida
 
-- **Sin migraciones.** Flyway está deshabilitado y `PLAN_EJECUCION.md` menciona
-  archivos `V*__*.sql` que no existen. El esquema lo maneja Hibernate. Un cambio
-  de entidad en producción altera la base sin revisión ni rollback. Antes del
-  segundo deploy conviene introducir Flyway o al menos un backup verificado.
+- **Sin migraciones.** Flyway está deshabilitado y no existen archivos `V*__*.sql`.
+  El esquema lo maneja Hibernate. Un cambio de entidad en producción altera la
+  base sin revisión ni rollback. Antes del segundo deploy conviene introducir
+  Flyway o al menos un backup verificado.
 - **Sin staging.** Los errores se descubren en producción. El smoke test es la
   única red.
 - **CSP y HSTS.** `SecurityHeadersFilter` aplica `nosniff`, `X-Frame-Options` y
