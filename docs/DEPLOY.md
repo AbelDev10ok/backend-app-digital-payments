@@ -9,16 +9,17 @@ backend para compilarse.
 
 ---
 
-## 1. Prerrequisitos de código (hacer antes de desplegar)
+## 1. Prerrequisitos de código (completados)
 
 | # | Cambio | Estado | Por qué |
 |---|--------|--------|---------|
-| 1 | `vercel.json` con rewrite SPA en el repo del frontend | **Pendiente** | Sin esto, recargar `/dashboard/cobros` devuelve 404 |
+| 1 | `vercel.json` con rewrite SPA en el repo del frontend | **Hecho** | Sin esto, recargar `/dashboard/cobros` devuelve 404 |
 | 2 | Permitir `/actuator/health` en `SecurityConfig` | **Hecho** | Sin esto el health check del proveedor recibe 401 y reinicia el contenedor |
 
-El health check quedó público con esta línea en `SecurityConfig.filterChain`:
+### Health check público
 
 ```java
+// SecurityConfig.filterChain
 .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
 ```
 
@@ -26,6 +27,20 @@ Verificado en local: `GET /actuator/health` → `200 {"status":"UP"}` sin token.
 No expone datos de negocio (solo UP/DOWN y el chequeo de la base). Es el
 endpoint estándar para health checks. `RateLimitFilter` no lo afecta: solo
 limita `/auth*` y `/email/send`.
+
+### Rewrite de SPA
+
+`vercel.json` en la raíz del repo del frontend:
+
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
+```
+
+Sin esto, recargar una ruta profunda devuelve 404. Documentación oficial:
+<Vercel — Vite on Vercel>.
 
 ---
 
