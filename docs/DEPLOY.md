@@ -11,21 +11,21 @@ backend para compilarse.
 
 ## 1. Prerrequisitos de código (hacer antes de desplegar)
 
-| # | Cambio | Por qué |
-|---|--------|---------|
-| 1 | `vercel.json` con rewrite SPA en el repo del frontend | Sin esto, recargar `/dashboard/cobros` devuelve 404 |
-| 2 | Permitir `/actuator/health` en `SecurityConfig` | El health check del proveedor recibe 401 y reinicia el contenedor |
+| # | Cambio | Estado | Por qué |
+|---|--------|--------|---------|
+| 1 | `vercel.json` con rewrite SPA en el repo del frontend | **Pendiente** | Sin esto, recargar `/dashboard/cobros` devuelve 404 |
+| 2 | Permitir `/actuator/health` en `SecurityConfig` | **Hecho** | Sin esto el health check del proveedor recibe 401 y reinicia el contenedor |
 
-El health check hoy está bloqueado: `SecurityConfig.filterChain` termina con
-`anyRequest().authenticated()` y `/actuator/**` no está en la lista de
-`permitAll()`. Agregar esta línea junto a las demás:
+El health check quedó público con esta línea en `SecurityConfig.filterChain`:
 
 ```java
 .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
 ```
 
-`/actuator/health` no expone datos de negocio (solo estado UP/DOWN y el chequeo
-de la base). Es el endpoint estándar para health checks.
+Verificado en local: `GET /actuator/health` → `200 {"status":"UP"}` sin token.
+No expone datos de negocio (solo UP/DOWN y el chequeo de la base). Es el
+endpoint estándar para health checks. `RateLimitFilter` no lo afecta: solo
+limita `/auth*` y `/email/send`.
 
 ---
 

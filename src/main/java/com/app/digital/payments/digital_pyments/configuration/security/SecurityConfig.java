@@ -67,6 +67,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/webhooks/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/webhooks/**").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/swagger-resources/**").permitAll()
+                // Health check publico: lo usan los proveedores de deploy (Railway,
+                // Render) para saber si el contenedor esta vivo. Solo expone UP/DOWN.
+                .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
 
                 .anyRequest().authenticated())
                 .addFilterBefore(rateLimitFilter, JwtAutenticacionFilter.class)
